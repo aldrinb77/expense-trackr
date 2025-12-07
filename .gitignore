@@ -1,0 +1,12 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# SQLite DB (optional to ignore in Git)
+backend/data/expense-tracker.db
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/

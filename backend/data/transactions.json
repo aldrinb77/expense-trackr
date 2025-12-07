@@ -1,0 +1,16 @@
+[
+  {
+    "id": 1,
+    "amount": 140,
+    "type": "debit",
+    "category": "new",
+    "createdAt": "2025-12-04T14:58:27.555Z"
+  },
+  {
+    "id": 2,
+    "amount": 150,
+    "type": "debit",
+    "category": "sw",
+    "createdAt": "2025-12-04T15:08:58.366Z"
+  }
+]

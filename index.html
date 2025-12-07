@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Expense Tracker</title>
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Chart.js library from CDN (for charts) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Our app logic -->
+    <script src="app.js" defer></script>
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-main">
+            <div>
+                <h1>Expense Tracker</h1>
+                <p class="tagline">Simple, minimal tracking of your daily spending</p>
+            </div>
+            <div class="theme-toggle">
+                <label>
+                    <input type="checkbox" id="theme-toggle-checkbox">
+                    Dark mode
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <main class="app-main">
+        <!-- Account / Auth card -->
+        <section class="card" id="auth-card">
+            <h2>Account</h2>
+
+            <!-- Visible when NOT logged in -->
+            <div id="auth-logged-out">
+                <p class="muted-text">
+                    Log in or create an account to start tracking your expenses.
+                    Each account sees only its own data.
+                </p>
+
+                <!-- Login form -->
+                <form id="login-form">
+                    <h3>Log In</h3>
+                    <div class="form-row">
+                        <label for="login-username">Username</label>
+                        <input
+                            type="text"
+                            id="login-username"
+                            name="login-username"
+                            required
+                        >
+                    </div>
+                    <div class="form-row">
+                        <label for="login-password">Password</label>
+                        <input
+                            type="password"
+                            id="login-password"
+                            name="login-password"
+                            required
+                        >
+                    </div>
+                    <p id="login-error" class="form-error"></p>
+                    <div class="form-actions">
+                        <button type="submit" class="primary-button">
+                            Log In
+                        </button>
+                        <button
+                            type="button"
+                            class="secondary-button small"
+                            id="show-register"
+                        >
+                            New user? Create an account
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Register form (hidden by default) -->
+                <form id="register-form" style="display: none; margin-top: 12px;">
+                    <h3>Create Account</h3>
+                    <div class="form-row">
+                        <label for="register-username">Username</label>
+                        <input
+                            type="text"
+                            id="register-username"
+                            name="register-username"
+                            required
+                        >
+                    </div>
+                    <div class="form-row">
+                        <label for="register-password">Password</label>
+                        <input
+                            type="password"
+                            id="register-password"
+                            name="register-password"
+                            required
+                        >
+                    </div>
+                    <div class="form-row">
+                        <label for="register-password2">Confirm Password</label>
+                        <input
+                            type="password"
+                            id="register-password2"
+                            name="register-password2"
+                            required
+                        >
+                    </div>
+                    <p id="register-error" class="form-error"></p>
+                    <div class="form-actions">
+                        <button type="submit" class="primary-button">
+                            Register
+                        </button>
+                        <button
+                            type="button"
+                            class="secondary-button small"
+                            id="show-login"
+                        >
+                            Already have an account? Log in
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Visible when logged in -->
+            <div id="auth-logged-in" style="display: none;">
+                <p>
+                    You are logged in as
+                    <strong id="current-username"></strong>.
+                </p>
+                <button
+                    type="button"
+                    class="secondary-button"
+                    id="logout-button"
+                >
+                    Log out
+                </button>
+                <p class="muted-text" style="margin-top: 6px;">
+                    All transactions you add now will be stored under this account.
+                </p>
+            </div>
+        </section>
+
+        <!-- Status card (always visible) -->
+        <section class="card">
+            <h2>App Status</h2>
+            <p id="status-text">If you can see this text, the app is loaded.</p>
+        </section>
+
+        <!-- Add / Edit Transaction card (requires auth) -->
+        <section class="card requires-auth" id="add-transaction-card">
+            <h2>Add Transaction</h2>
+            <form id="transaction-form">
+                <div class="form-row">
+                    <label for="amount">Amount (Rs)</label>
+                    <input
+                        type="number"
+                        id="amount"
+                        name="amount"
+                        min="0.01"
+                        step="0.01"
+                        placeholder="e.g. 100"
+                        required
+                    >
+                </div>
+
+                <div class="form-row">
+                    <label for="type">Type</label>
+                    <select id="type" name="type" required>
+                        <option value="debit">Debit (Expense)</option>
+                        <option value="credit">Credit (Income)</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label for="category">Category</label>
+                    <input
+                        type="text"
+                        id="category"
+                        name="category"
+                        placeholder="e.g. Food, Petrol"
+                        required
+                    >
+                </div>
+
+                <p id="form-error" class="form-error"></p>
+
+                <div class="form-actions">
+                    <button
+                        type="submit"
+                        class="primary-button"
+                        id="transaction-submit-button"
+                    >
+                        Add Transaction
+                    </button>
+                    <button
+                        type="button"
+                        class="secondary-button"
+                        id="transaction-cancel-edit"
+                        style="display: none;"
+                    >
+                        Cancel Edit
+                    </button>
+                </div>
+                <p
+                    id="editing-hint"
+                    class="muted-text editing-hint"
+                    style="display: none;"
+                >
+                    Editing an existing transaction. Change the values and click
+                    "Save Changes", or click "Cancel Edit".
+                </p>
+            </form>
+        </section>
+
+        <!-- Date range filter (requires auth) -->
+        <section class="card requires-auth" id="date-range-card">
+            <h2>Date Range Filter (Optional)</h2>
+            <div class="date-range-controls">
+                <div class="form-row-inline">
+                    <label for="range-preset">Preset</label>
+                    <select id="range-preset">
+                        <option value="none">All time</option>
+                        <option value="today">Today</option>
+                        <option value="thisWeek">This Week</option>
+                        <option value="thisMonth">This Month</option>
+                        <option value="thisYear">This Year</option>
+                        <option value="last30">Last 30 Days</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="form-row-inline">
+                    <label for="range-from">From</label>
+                    <input type="date" id="range-from">
+                </div>
+                <div class="form-row-inline">
+                    <label for="range-to">To</label>
+                    <input type="date" id="range-to">
+                </div>
+                <button
+                    type="button"
+                    class="secondary-button small"
+                    id="range-apply"
+                >
+                    Apply
+                </button>
+                <button
+                    type="button"
+                    class="secondary-button small"
+                    id="range-clear"
+                >
+                    Clear
+                </button>
+            </div>
+            <p id="range-summary-text" class="muted-text" style="margin-top: 6px;">
+                No custom date range selected. Showing all transactions.
+            </p>
+        </section>
+
+        <!-- Summary card (requires auth) -->
+        <section class="card requires-auth" id="summary-card">
+            <h2>Summary</h2>
+            <div class="summary-grid">
+                <div class="summary-block">
+                    <h3>Today</h3>
+                    <p>Debit: <span id="today-debit">Rs 0.00</span></p>
+                    <p>Credit: <span id="today-credit">Rs 0.00</span></p>
+                    <p>Net: <span id="today-net">Rs 0.00</span></p>
+                </div>
+                <div class="summary-block">
+                    <h3>This Week</h3>
+                    <p>Debit: <span id="week-debit">Rs 0.00</span></p>
+                    <p>Credit: <span id="week-credit">Rs 0.00</span></p>
+                    <p>Net: <span id="week-net">Rs 0.00</span></p>
+                </div>
+                <div class="summary-block">
+                    <h3>This Month</h3>
+                    <p>Debit: <span id="month-debit">Rs 0.00</span></p>
+                    <p>Credit: <span id="month-credit">Rs 0.00</span></p>
+                    <p>Net: <span id="month-net">Rs 0.00</span></p>
+                </div>
+                <div class="summary-block">
+                    <h3>This Year</h3>
+                    <p>Debit: <span id="year-debit">Rs 0.00</span></p>
+                    <p>Credit: <span id="year-credit">Rs 0.00</span></p>
+                    <p>Net: <span id="year-net">Rs 0.00</span></p>
+                </div>
+            </div>
+
+            <div class="summary-overall">
+                <h3>Overall Totals</h3>
+                <p>Debit: <span id="overall-debit">Rs 0.00</span></p>
+                <p>Credit: <span id="overall-credit">Rs 0.00</span></p>
+                <p>Net: <span id="overall-net">Rs 0.00</span></p>
+            </div>
+        </section>
+
+        <!-- Saving goal card (requires auth, per user) -->
+        <section class="card requires-auth" id="saving-goal-card">
+            <h2>Saving Goal (Monthly)</h2>
+            <form id="saving-goal-form">
+                <div class="form-row">
+                    <label for="saving-goal-amount">Monthly saving goal (Rs)</label>
+                    <input
+                        type="number"
+                        id="saving-goal-amount"
+                        min="0"
+                        step="0.01"
+                        placeholder="e.g. 10000"
+                    >
+                </div>
+                <button type="submit" class="secondary-button">Save Goal</button>
+                <p id="saving-goal-error" class="form-error"></p>
+            </form>
+
+            <p class="muted-text">
+                Saving = this month's credit minus this month's debit.
+            </p>
+
+            <div class="saving-status">
+                <p>Current month net: <span id="saving-current-net">Rs 0.00</span></p>
+                <p>Goal: <span id="saving-goal-display">Not set</span></p>
+                <p id="saving-goal-status">Set a goal to see your progress.</p>
+                <div class="progress-bar">
+                    <div class="progress-bar-fill" id="saving-goal-progress"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Charts card (requires auth) -->
+        <section class="card requires-auth" id="charts-card">
+            <h2>Insights & Charts</h2>
+            <div class="charts-grid">
+                <div class="chart-block">
+                    <h3>Expenses by Category (This Month)</h3>
+                    <canvas id="category-chart"></canvas>
+                    <p id="category-chart-empty" class="muted-text">
+                        No expense data for this month yet.
+                    </p>
+                </div>
+                <div class="chart-block">
+                    <h3>Spending (Debits) – Last 7 Days</h3>
+                    <canvas id="daily-chart"></canvas>
+                    <p id="daily-chart-empty" 
