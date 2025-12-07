@@ -13,18 +13,8 @@
 </head>
 <body>
     <header class="app-header">
-        <div class="header-main">
-            <div>
-                <h1>Expense Tracker</h1>
-                <p class="tagline">Simple, minimal tracking of your daily spending</p>
-            </div>
-            <div class="theme-toggle">
-                <label>
-                    <input type="checkbox" id="theme-toggle-checkbox">
-                    Dark mode
-                </label>
-            </div>
-        </div>
+        <h1>Expense Tracker</h1>
+        <p class="tagline">Simple, minimal tracking of your daily spending</p>
     </header>
 
     <main class="app-main">
@@ -212,50 +202,6 @@
             </form>
         </section>
 
-        <!-- Date range filter (requires auth) -->
-        <section class="card requires-auth" id="date-range-card">
-            <h2>Date Range Filter (Optional)</h2>
-            <div class="date-range-controls">
-                <div class="form-row-inline">
-                    <label for="range-preset">Preset</label>
-                    <select id="range-preset">
-                        <option value="none">All time</option>
-                        <option value="today">Today</option>
-                        <option value="thisWeek">This Week</option>
-                        <option value="thisMonth">This Month</option>
-                        <option value="thisYear">This Year</option>
-                        <option value="last30">Last 30 Days</option>
-                        <option value="custom">Custom</option>
-                    </select>
-                </div>
-                <div class="form-row-inline">
-                    <label for="range-from">From</label>
-                    <input type="date" id="range-from">
-                </div>
-                <div class="form-row-inline">
-                    <label for="range-to">To</label>
-                    <input type="date" id="range-to">
-                </div>
-                <button
-                    type="button"
-                    class="secondary-button small"
-                    id="range-apply"
-                >
-                    Apply
-                </button>
-                <button
-                    type="button"
-                    class="secondary-button small"
-                    id="range-clear"
-                >
-                    Clear
-                </button>
-            </div>
-            <p id="range-summary-text" class="muted-text" style="margin-top: 6px;">
-                No custom date range selected. Showing all transactions.
-            </p>
-        </section>
-
         <!-- Summary card (requires auth) -->
         <section class="card requires-auth" id="summary-card">
             <h2>Summary</h2>
@@ -340,4 +286,85 @@
                 <div class="chart-block">
                     <h3>Spending (Debits) – Last 7 Days</h3>
                     <canvas id="daily-chart"></canvas>
-                    <p id="daily-chart-empty" 
+                    <p id="daily-chart-empty" class="muted-text">
+                        No spending data for the last 7 days.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Category totals table (requires auth) -->
+        <section class="card requires-auth" id="category-totals-card">
+            <h2>Category Totals (This Month)</h2>
+            <p class="muted-text">
+                Only debit (expense) transactions are included.
+            </p>
+            <table class="category-table">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Amount (Rs)</th>
+                        <th>Share of total</th>
+                    </tr>
+                </thead>
+                <tbody id="category-totals-body">
+                    <!-- Rows will be inserted by JavaScript -->
+                </tbody>
+            </table>
+            <p id="category-totals-empty" class="muted-text">
+                No expense data for this month yet.
+            </p>
+        </section>
+
+        <!-- Transactions list card (requires auth) -->
+        <section class="card requires-auth" id="transactions-card">
+            <h2>Transactions</h2>
+
+            <!-- Filters apply to the list below only -->
+            <div class="transactions-filters">
+                <div class="form-row-inline">
+                    <label for="filter-type">Type</label>
+                    <select id="filter-type">
+                        <option value="all">All</option>
+                        <option value="debit">Debits only</option>
+                        <option value="credit">Credits only</option>
+                    </select>
+                </div>
+                <div class="form-row-inline">
+                    <label for="filter-category">Category</label>
+                    <input
+                        type="text"
+                        id="filter-category"
+                        placeholder="e.g. Food"
+                    >
+                </div>
+                <button
+                    type="button"
+                    class="secondary-button small"
+                    id="filter-reset"
+                >
+                    Clear filters
+                </button>
+                <button
+                    type="button"
+                    class="secondary-button small"
+                    id="download-csv"
+                >
+                    Download CSV
+                </button>
+            </div>
+
+            <p id="no-transactions" class="muted-text">
+                No transactions yet. Add your first one above.
+            </p>
+            <p id="no-transactions-filtered" class="muted-text" style="display: none;">
+                No transactions match the selected filters.
+            </p>
+
+            <ul id="transaction-list" class="transaction-list">
+                <!-- Transactions will be inserted here by JavaScript -->
+            </ul>
+        </section>
+    </main>
+</body>
+</html>
