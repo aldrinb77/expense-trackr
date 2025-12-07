@@ -10,8 +10,16 @@
 // - Optional date range filter for the transactions list
 // - Dark mode toggle
 
-// Backend base URL
-const API_BASE_URL = "http://localhost:4000";
+// Use local backend when running from file:// or localhost,
+// otherwise use the deployed backend on Render.
+const isLocal =
+    window.location.protocol === "file:" ||
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
+
+const API_BASE_URL = isLocal
+    ? "http://localhost:4000"
+    : "https://expense-trackr-backend.onrender.com";
 
 // Keys for LocalStorage
 const AUTH_TOKEN_KEY = "expense-tracker-auth-token-v1";
