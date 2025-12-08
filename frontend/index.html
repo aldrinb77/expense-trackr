@@ -3,6 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <title>Expense Tracker</title>
+    <head>
+    <meta charset="UTF-8">
+    <title>Expense Tracker</title>
+
+    <!-- Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+    >
+
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Chart.js library from CDN (for charts) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Our app logic -->
+    <script src="app.js" defer></script>
+</head>
     <link rel="stylesheet" href="style.css">
 
     <!-- Chart.js library from CDN (for charts) -->
@@ -12,9 +32,67 @@
     <script src="app.js" defer></script>
 </head>
 <body>
-    <header class="app-header">
-        <h1>Expense Tracker</h1>
-        <p class="tagline">Simple, minimal tracking of your daily spending</p>
+  <body>
+    <!-- Toasts + global loading overlay -->
+    <div id="toast-container"></div>
+    <div id="global-loading" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p>Loading data...</p>
+    </div>
+
+      <header class="app-header">
+        <div class="header-main">
+            <div class="header-left">
+                <h1>Expense Tracker</h1>
+                <p class="tagline">Simple, minimal tracking of your daily spending</p>
+            </div>
+            <div class="header-right">
+                <nav class="top-nav">
+                    <button
+                        type="button"
+                        class="nav-link"
+                        data-scroll-target="summary-card"
+                    >
+                        Dashboard
+                    </button>
+                    <button
+                        type="button"
+                        class="nav-link"
+                        data-scroll-target="category-budgets-card"
+                    >
+                        Budgets
+                    </button>
+                    <button
+                        type="button"
+                        class="nav-link"
+                        data-scroll-target="charts-card"
+                    >
+                        Charts
+                    </button>
+                    <button
+                        type="button"
+                        class="nav-link"
+                        data-scroll-target="transactions-card"
+                    >
+                        Transactions
+                    </button>
+                </nav>
+                <div class="theme-toggle">
+                    <label>
+                        <input type="checkbox" id="theme-toggle-checkbox">
+                        Dark mode
+                    </label>
+                </div>
+                <button
+                    type="button"
+                    id="help-button"
+                    class="icon-button"
+                    aria-label="Help / About this app"
+                >
+                    ?
+                </button>
+            </div>
+        </div>
     </header>
 
     <main class="app-main">
@@ -111,22 +189,59 @@
                 </form>
             </div>
 
-            <!-- Visible when logged in -->
+                       <!-- Visible when logged in -->
             <div id="auth-logged-in" style="display: none;">
-                <p>
-                    You are logged in as
-                    <strong id="current-username"></strong>.
-                </p>
-                <button
-                    type="button"
-                    class="secondary-button"
-                    id="logout-button"
-                >
-                    Log out
-                </button>
+                <div class="profile-row">
+                    <div class="profile-avatar" id="profile-avatar"></div>
+                    <div class="profile-main">
+                        <p class="profile-name">
+                            <span>Logged in as</span>
+                            <strong id="current-username"></strong>
+                        </p>
+                        <p class="muted-text" id="profile-member-since">
+                            Member since —
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="secondary-button"
+                        id="logout-button"
+                    >
+                        Log out
+                    </button>
+                </div>
+
                 <p class="muted-text" style="margin-top: 6px;">
                     All transactions you add now will be stored under this account.
                 </p>
+
+                <div class="profile-stats" id="profile-stats">
+                    <div class="profile-stat">
+                        <span class="label">Transactions</span>
+                        <span class="value" id="profile-total-transactions">0</span>
+                    </div>
+                    <div class="profile-stat">
+                        <span class="label">This month debit</span>
+                        <span class="value" id="profile-month-debit">Rs 0.00</span>
+                    </div>
+                    <div class="profile-stat">
+                        <span class="label">This month credit</span>
+                        <span class="value" id="profile-month-credit">Rs 0.00</span>
+                    </div>
+                    <div class="profile-stat">
+                        <span class="label">Net</span>
+                        <span class="value" id="profile-month-net">Rs 0.00</span>
+                    </div>
+                                    <div class="profile-actions">
+                    <button
+                        type="button"
+                        class="secondary-button small"
+                        id="change-avatar-button"
+                    >
+                        Change avatar
+                    </button>
+                </div>
+                </div>
             </div>
         </section>
 
@@ -365,6 +480,78 @@
                 <!-- Transactions will be inserted here by JavaScript -->
             </ul>
         </section>
+                <!-- Help / About modal -->
+        <div id="help-modal" class="modal-overlay" style="display: none;">
+            <div class="modal-content" role="dialog" aria-labelledby="help-modal-title">
+                <h2 id="help-modal-title">About this app</h2>
+                <p>
+                    This Expense Tracker helps you quickly log debits (expenses) and credits (income),
+                    see summaries, and keep an eye on your budgets and saving goals.
+                </p>
+                <ul>
+                    <li><strong>Account</strong> – Log in or create an account. Each account has its own data.</li>
+                    <li><strong>Dashboard</strong> – Date range filter + daily / weekly / monthly / yearly summaries.</li>
+                    <li><strong>Budgets</strong> – Monthly saving goal and per-category budgets with progress.</li>
+                    <li><strong>Charts</strong> – Category breakdown, last 7 days spending, and 90‑day net cash flow.</li>
+                    <li><strong>Transactions</strong> – Full list with filters, edit/delete, and CSV export.</li>
+                </ul>
+                <p class="muted-text">
+                    Tip: use the date range filter and dark mode toggle in the header to customize the view.
+                </p>
+                <div class="modal-actions">
+                    <button
+                        type="button"
+                        class="secondary-button"
+                        id="help-modal-close"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+                <!-- Avatar modal -->
+        <div id="avatar-modal" class="modal-overlay" style="display: none;">
+            <div class="modal-content avatar-modal" role="dialog" aria-labelledby="avatar-modal-title">
+                <h2 id="avatar-modal-title">Change avatar</h2>
+                <div class="avatar-modal-body">
+                    <div class="avatar-preview" id="avatar-preview"></div>
+                    <div class="avatar-input">
+                        <label class="muted-text" for="avatar-file-input">
+                            Upload a square image (max ~200 KB). It will be shown as your profile picture.
+                        </label>
+                        <input
+                            type="file"
+                            id="avatar-file-input"
+                            accept="image/*"
+                        >
+                    </div>
+                </div>
+                <p class="form-error" id="avatar-error"></p>
+                <div class="modal-actions">
+                    <button
+                        type="button"
+                        class="secondary-button"
+                        id="avatar-remove-button"
+                    >
+                        Remove avatar
+                    </button>
+                    <button
+                        type="button"
+                        class="secondary-button"
+                        id="avatar-cancel-button"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        class="primary-button"
+                        id="avatar-save-button"
+                    >
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
     </main>
 </body>
 </html>

@@ -59,6 +59,38 @@ document.addEventListener("DOMContentLoaded", () => {
         "theme-toggle-checkbox"
     );
 
+    const toastContainer = document.getElementById("toast-container");
+    const globalLoadingEl = document.getElementById("global-loading");
+
+    // Profile & avatar
+    const profileAvatarEl = document.getElementById("profile-avatar");
+    const profileMemberSinceEl = document.getElementById("profile-member-since");
+    const profileTotalTransactionsEl = document.getElementById(
+        "profile-total-transactions"
+    );
+    const profileMonthDebitEl = document.getElementById("profile-month-debit");
+    const profileMonthCreditEl = document.getElementById("profile-month-credit");
+    const profileMonthNetEl = document.getElementById("profile-month-net");
+
+    const changeAvatarButton = document.getElementById("change-avatar-button");
+    const avatarModal = document.getElementById("avatar-modal");
+    const avatarPreviewEl = document.getElementById("avatar-preview");
+    const avatarFileInput = document.getElementById("avatar-file-input");
+    const avatarErrorEl = document.getElementById("avatar-error");
+    const avatarRemoveButton = document.getElementById("avatar-remove-button");
+    const avatarCancelButton = document.getElementById("avatar-cancel-button");
+    const avatarSaveButton = document.getElementById("avatar-save-button");
+
+    // Help/About + nav
+    const helpButton = document.getElementById("help-button");
+    const helpModal = document.getElementById("help-modal");
+    const helpModalClose = document.getElementById("help-modal-close");
+
+    const navButtons = document.querySelectorAll(
+        ".nav-link[data-scroll-target]"
+    );
+    const appTitleEl = document.querySelector(".app-header h1");
+
     // Auth
     const authLoggedOut = document.getElementById("auth-logged-out");
     const authLoggedIn = document.getElementById("auth-logged-in");
@@ -84,7 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Status
     const statusElement = document.getElementById("status-text");
 
-    // Transactions
+    // Transactions form & list
     const form = document.getElementById("transaction-form");
     const amountInput = document.getElementById("amount");
     const typeInput = document.getElementById("type");
@@ -101,7 +133,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "no-transactions-filtered"
     );
 
-    // Filters (type/category)
+    // Type/category filters
     const filterTypeSelect = document.getElementById("filter-type");
     const filterCategoryInput = document.getElementById("filter-category");
     const filterResetButton = document.getElementById("filter-reset");
@@ -136,7 +168,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const overallCreditEl = document.getElementById("overall-credit");
     const overallNetEl = document.getElementById("overall-net");
 
-    // Saving goal elements
+    // Saving goal
     const savingGoalForm = document.getElementById("saving-goal-form");
     const savingGoalInput = document.getElementById("saving-goal-amount");
     const savingGoalError = document.getElementById("saving-goal-error");
@@ -150,11 +182,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const dailyChartEmpty = document.getElementById("daily-chart-empty");
     const netTrendChartEmpty = document.getElementById("net-trend-chart-empty");
 
-    // Category totals table
+    // Category totals
     const categoryTotalsBody = document.getElementById("category-totals-body");
     const categoryTotalsEmpty = document.getElementById("category-totals-empty");
 
-    // Category budgets elements
+    // Category budgets
     const categoryBudgetForm = document.getElementById("category-budget-form");
     const budgetCategoryInput = document.getElementById("budget-category");
     const budgetAmountInput = document.getElementById("budget-amount");
@@ -167,6 +199,8 @@ document.addEventListener("DOMContentLoaded", () => {
         "category-budgets-table"
     );
 
+    // === from here on, rest of your code (helpers, event handlers, etc.) ===
+
     // === Status text ===
     if (statusElement) {
         const now = new Date();
@@ -174,7 +208,17 @@ document.addEventListener("DOMContentLoaded", () => {
         statusElement.textContent = `JavaScript is working. Page loaded at: ${formattedTime}`;
         statusElement.style.color = "#2e7d32";
     }
-
+    function formatDateOnly(isoString) {
+        if (!isoString) return null;
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return null;
+        return d.toLocaleDateString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "2-digit"
+        });
+    }
+    
     // === Theme helpers ===
 
     function applyTheme(theme) {
@@ -204,7 +248,251 @@ document.addEventListener("DOMContentLoaded", () => {
             saveTheme(theme);
         });
     }
+        // === Avatar helpers ===
 
+    let pendingAvatarDataUrl = null;
+
+    function setAvatarPreviewFromCurrentUser() {
+        if (!avatarPreviewEl) return;
+        if (currentUser && currentUser.avatar) {
+            avatarPreviewEl.style.backgroundImage = `url(${currentUser.avatar})`;
+            avatarPreviewEl.textContent = "";
+        } else if (currentUser && currentUser.username) {
+            avatarPreviewEl.style.backgroundImage = "none";
+            avatarPreviewEl.textContent = currentUser.username
+                .charAt(0)
+                .toUpperCase();
+        } else {
+            avatarPreviewEl.style.backgroundImage = "none";
+            avatarPreviewEl.textContent = "?";
+        }
+    }
+
+    function setAvatarPreviewFromDataUrl(dataUrl) {
+        if (!avatarPreviewEl) return;
+        if (dataUrl) {
+            avatarPreviewEl.style.backgroundImage = `url(${dataUrl})`;
+            avatarPreviewEl.textContent = "";
+        } else {
+            setAvatarPreviewFromCurrentUser();
+        }
+    }
+
+    async function saveAvatarOnServer(avatarDataUrl) {
+        return fetchJson(`${API_BASE_URL}/api/user/avatar`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ avatar: avatarDataUrl })
+        });
+    }
+    // === Toast & global loading helpers ===
+
+    function showToast(message, type = "success") {
+        if (!toastContainer) return;
+        const toast = document.createElement("div");
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+
+        toastContainer.appendChild(toast);
+
+        // Trigger transition
+        requestAnimationFrame(() => {
+            toast.classList.add("visible");
+        });
+
+        // Auto-hide
+        setTimeout(() => {
+            toast.classList.remove("visible");
+            setTimeout(() => toast.remove(), 300);
+        }, 3500);
+    }
+
+    let globalLoadingCount = 0;
+
+    function showGlobalLoading() {
+        globalLoadingCount++;
+        if (globalLoadingEl) {
+            globalLoadingEl.style.display = "flex";
+        }
+    }
+
+    function hideGlobalLoading() {
+        globalLoadingCount = Math.max(0, globalLoadingCount - 1);
+        if (globalLoadingCount === 0 && globalLoadingEl) {
+            globalLoadingEl.style.display = "none";
+        }
+    }
+        // === Simple nav scroll & Help modal ===
+
+    function scrollToSectionById(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    }
+
+    if (navButtons && navButtons.length > 0) {
+        navButtons.forEach((btn) => {
+            btn.addEventListener("click", () => {
+                const targetId = btn.getAttribute("data-scroll-target");
+                if (targetId) scrollToSectionById(targetId);
+            });
+        });
+    }
+
+    if (helpButton && helpModal && helpModalClose) {
+        helpButton.addEventListener("click", () => {
+            helpModal.style.display = "flex";
+        });
+    if (appTitleEl && helpModal) {
+        appTitleEl.style.cursor = "pointer";
+        appTitleEl.addEventListener("click", () => {
+            helpModal.style.display = "flex";
+        });
+    }
+        helpModal.addEventListener("click", (event) => {
+            if (event.target === helpModal) {
+                helpModal.style.display = "none";
+            }
+        });
+
+        helpModalClose.addEventListener("click", () => {
+            helpModal.style.display = "none";
+        });
+    }
+        // Avatar modal behavior
+    if (changeAvatarButton && avatarModal && avatarPreviewEl) {
+        changeAvatarButton.addEventListener("click", () => {
+            pendingAvatarDataUrl = null;
+            if (avatarErrorEl) avatarErrorEl.textContent = "";
+            setAvatarPreviewFromCurrentUser();
+            avatarModal.style.display = "flex";
+        });
+    }
+
+    if (avatarCancelButton && avatarModal) {
+        avatarCancelButton.addEventListener("click", () => {
+            avatarModal.style.display = "none";
+        });
+    }
+
+    if (avatarModal) {
+        avatarModal.addEventListener("click", (event) => {
+            if (event.target === avatarModal) {
+                avatarModal.style.display = "none";
+            }
+        });
+    }
+
+    if (avatarFileInput) {
+        avatarFileInput.addEventListener("change", () => {
+            if (avatarErrorEl) avatarErrorEl.textContent = "";
+            const file = avatarFileInput.files && avatarFileInput.files[0];
+            if (!file) return;
+
+            // Simple size guard: ~200 KB
+            if (file.size > 200 * 1024) {
+                if (avatarErrorEl) {
+                    avatarErrorEl.textContent =
+                        "File is too large. Please select an image under 200 KB.";
+                }
+                avatarFileInput.value = "";
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = reader.result;
+                if (typeof result === "string") {
+                    pendingAvatarDataUrl = result;
+                    setAvatarPreviewFromDataUrl(pendingAvatarDataUrl);
+                }
+            };
+            reader.onerror = () => {
+                if (avatarErrorEl) {
+                    avatarErrorEl.textContent =
+                        "Failed to read file. Please try again.";
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    if (avatarSaveButton) {
+        avatarSaveButton.addEventListener("click", async () => {
+            if (avatarErrorEl) avatarErrorEl.textContent = "";
+            if (!currentUser) {
+                if (avatarErrorEl) {
+                    avatarErrorEl.textContent = "You must be logged in.";
+                }
+                return;
+            }
+
+            if (!pendingAvatarDataUrl) {
+                if (avatarErrorEl) {
+                    avatarErrorEl.textContent =
+                        "Please choose an image or click Remove avatar.";
+                }
+                return;
+            }
+
+            try {
+                const data = await saveAvatarOnServer(pendingAvatarDataUrl);
+                currentUser.avatar = data.avatar || null;
+                saveAuthToStorage();
+                updateAuthUI();
+                avatarModal.style.display = "none";
+                avatarFileInput.value = "";
+                showToast("Avatar updated.", "success");
+            } catch (error) {
+                console.error(error);
+                if (error.status === 401) {
+                    if (avatarErrorEl) {
+                        avatarErrorEl.textContent =
+                            "Your session has expired. Please log in again.";
+                    }
+                    clearAuthState();
+                } else if (avatarErrorEl) {
+                    avatarErrorEl.textContent =
+                        "Failed to save avatar. Please try again.";
+                }
+            }
+        });
+    }
+
+    if (avatarRemoveButton) {
+        avatarRemoveButton.addEventListener("click", async () => {
+            if (avatarErrorEl) avatarErrorEl.textContent = "";
+            if (!currentUser) {
+                if (avatarErrorEl) {
+                    avatarErrorEl.textContent = "You must be logged in.";
+                }
+                return;
+            }
+
+            try {
+                const data = await saveAvatarOnServer(null);
+                currentUser.avatar = data.avatar || null;
+                saveAuthToStorage();
+                updateAuthUI();
+                avatarModal.style.display = "none";
+                avatarFileInput.value = "";
+                showToast("Avatar removed.", "success");
+            } catch (error) {
+                console.error(error);
+                if (error.status === 401) {
+                    if (avatarErrorEl) {
+                        avatarErrorEl.textContent =
+                            "Your session has expired. Please log in again.";
+                    }
+                    clearAuthState();
+                } else if (avatarErrorEl) {
+                    avatarErrorEl.textContent =
+                        "Failed to remove avatar. Please try again.";
+                }
+            }
+        });
+    }
     // === Saving goal API helpers ===
 
     async function loadSavingGoalFromServer() {
@@ -339,7 +627,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    function updateAuthUI() {
+      function updateAuthUI() {
         const loggedIn = !!currentUser;
 
         if (authLoggedIn) {
@@ -348,8 +636,35 @@ document.addEventListener("DOMContentLoaded", () => {
         if (authLoggedOut) {
             authLoggedOut.style.display = loggedIn ? "none" : "block";
         }
+
         if (currentUsernameEl) {
             currentUsernameEl.textContent = loggedIn ? currentUser.username : "";
+        }
+
+        if (profileAvatarEl) {
+            if (loggedIn && currentUser.avatar) {
+                profileAvatarEl.style.backgroundImage = `url(${currentUser.avatar})`;
+                profileAvatarEl.textContent = "";
+            } else if (loggedIn && currentUser.username) {
+                profileAvatarEl.style.backgroundImage = "none";
+                profileAvatarEl.textContent = currentUser.username
+                    .charAt(0)
+                    .toUpperCase();
+            } else {
+                profileAvatarEl.style.backgroundImage = "none";
+                profileAvatarEl.textContent = "";
+            }
+        }
+
+        if (profileMemberSinceEl) {
+            if (loggedIn && currentUser.createdAt) {
+                const formatted = formatDateOnly(currentUser.createdAt);
+                profileMemberSinceEl.textContent = formatted
+                    ? `Member since ${formatted}`
+                    : "Member since —";
+            } else {
+                profileMemberSinceEl.textContent = "Member since —";
+            }
         }
 
         authRequiredSections.forEach((section) => {
@@ -1160,6 +1475,19 @@ document.addEventListener("DOMContentLoaded", () => {
             overallCreditEl.textContent = formatAmount(overall.credit);
         if (overallNetEl) overallNetEl.textContent = formatAmount(overallNet);
 
+                if (profileTotalTransactionsEl) {
+            profileTotalTransactionsEl.textContent = String(transactions.length);
+        }
+        if (profileMonthDebitEl) {
+            profileMonthDebitEl.textContent = formatAmount(month.debit);
+        }
+        if (profileMonthCreditEl) {
+            profileMonthCreditEl.textContent = formatAmount(month.credit);
+        }
+        if (profileMonthNetEl) {
+            profileMonthNetEl.textContent = formatAmount(monthNet);
+        }
+
         updateSavingGoalUI(monthNet);
         updateCharts();
         renderCategoryTotalsTable();
@@ -1298,15 +1626,21 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                     renderTransactions();
                     updateSummaries();
-                } catch (error) {
-                    console.error(error);
-                    if (error.status === 401) {
-                        alert("Your session has expired. Please log in again.");
-                        clearAuthState();
-                    } else {
-                        alert("Failed to delete transaction from server.");
-                    }
+                           } catch (error) {
+                console.error(error);
+                if (error.status === 401) {
+                    showToast(
+                        "Your session has expired. Please log in again.",
+                        "error"
+                    );
+                    clearAuthState();
+                } else {
+                    showToast(
+                        "Failed to delete transaction from server.",
+                        "error"
+                    );
                 }
+            }
                 return;
             }
 
@@ -1375,7 +1709,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 renderTransactions();
                 updateSummaries();
-
+ showToast(
+                    editingTransactionId === null
+                        ? "Transaction added."
+                        : "Transaction updated.",
+                    "success"
+                );
                 form.reset();
                 exitEditMode();
                 amountInput.focus();
@@ -1462,9 +1801,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 a.click();
                 a.remove();
                 window.URL.revokeObjectURL(url);
-            } catch (error) {
+                      } catch (error) {
                 console.error(error);
-                alert("Failed to download CSV.");
+                showToast("Failed to download CSV.", "error");
             }
         });
     }
@@ -1561,6 +1900,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 budgetAmountInput.value = "";
                 renderCategoryBudgetsTable();
                 updateSummaries();
+                 showToast("Budget saved.", "success");
+                   showToast("Budget deleted.", "success");
+            
             } catch (error) {
                 console.error(error);
                 if (error.status === 401) {
@@ -1603,13 +1945,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 renderCategoryBudgetsTable();
                 updateSummaries();
-            } catch (error) {
+                      } catch (error) {
                 console.error(error);
                 if (error.status === 401) {
-                    alert("Your session has expired. Please log in again.");
+                    showToast(
+                        "Your session has expired. Please log in again.",
+                        "error"
+                    );
                     clearAuthState();
                 } else {
-                    alert("Failed to delete budget.");
+                    showToast("Failed to delete budget.", "error");
                 }
             }
         });
@@ -1757,9 +2102,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     );
                 }
 
-                syncSavingGoalInput();
-                renderTransactions();
+                               syncSavingGoalInput();
                 updateSummaries();
+                showToast("Saving goal updated.", "success");
 
                 loginForm.reset();
                 if (registerForm) registerForm.reset();
@@ -1865,35 +2210,40 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // === Initial load ===
 
-    async function init() {
+       async function init() {
         loadTheme();            // 0) Theme
         loadAuthFromStorage();  // 1) Auth
         updateAuthUI();
 
-        // 2) If we have a token, verify it and load this user's data
-        if (authToken && currentUser) {
-            try {
-                const me = await fetchJson(`${API_BASE_URL}/api/auth/me`);
-                currentUser = me.user;
-                saveAuthToStorage();
+        showGlobalLoading();
+        try {
+            // 2) If we have a token, verify it and load this user's data
+            if (authToken && currentUser) {
+                try {
+                    const me = await fetchJson(`${API_BASE_URL}/api/auth/me`);
+                    currentUser = me.user;
+                    saveAuthToStorage();
 
-                await loadTransactionsFromServer();
-                await loadSavingGoalFromServer();
-                await loadCategoryBudgetsFromServer();
-            } catch (error) {
-                console.error("Auto-login failed:", error);
-                clearAuthState();
+                    await loadTransactionsFromServer();
+                    await loadSavingGoalFromServer();
+                    await loadCategoryBudgetsFromServer();
+                } catch (error) {
+                    console.error("Auto-login failed:", error);
+                    clearAuthState();
+                }
+            } else {
+                savingGoalAmount = null;
+                categoryBudgets.length = 0;
             }
-        } else {
-            savingGoalAmount = null;
-            categoryBudgets.length = 0;
+
+            syncSavingGoalInput();
+
+            renderTransactions();
+            updateSummaries();
+        } finally {
+            hideGlobalLoading();
         }
-
-        syncSavingGoalInput();
-
-        renderTransactions();
-        updateSummaries();
     }
 
-    init();
-});
+        init();
+    });
