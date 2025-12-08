@@ -16,7 +16,27 @@ const PORT = process.env.PORT || 4000;
 // --- Express middleware ---
 
 app.use(express.json());
-app.use(cors());
+
+// CORS: allow only Netlify frontend + local tools / file://
+const allowedOrigins = [
+    "https://gleeful-sunburst-10409b.netlify.app"
+];
+
+app.use(
+    cors({
+        origin: (origin, callback) => {
+            // Allow requests with no origin (mobile apps, curl, file://)
+            if (!origin || origin === "null") {
+                return callback(null, true);
+            }
+            if (allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+            console.warn("CORS blocked for origin:", origin);
+            return callback(new Error("Not allowed by CORS"));
+        }
+    })
+);
 
 // Serve static frontend files from /public (optional; you are currently
 // opening index.html directly, but this is harmless and useful later)
@@ -24,7 +44,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 console.log("Serving static files from:", PUBLIC_DIR);
 app.use(express.static(PUBLIC_DIR));
 
-// Explicit routes for "/", "/index.html" (for when you deploy)
+// Explicit routes for "/", "/index.html" (for when you deploy static files here)
 app.get(["/", "/index.html"], (req, res) => {
     const indexPath = path.join(PUBLIC_DIR, "index.html");
     fs.access(indexPath, fs.constants.F_OK, (err) => {
@@ -40,8 +60,10 @@ app.get(["/", "/index.html"], (req, res) => {
     });
 });
 
-// === JWT configuration (for demo only; in production use env vars) ===
-const JWT_SECRET = "dev-secret-change-me";
+// === JWT configuration ===
+// IMPORTANT: in production we use process.env.JWT_SECRET (set on Render).
+// The fallback string is only for local development.
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const JWT_EXPIRES_IN = "7d";
 
 // --- Database setup ---
@@ -232,7 +254,6 @@ function createUser(username, password) {
             function (err) {
                 if (err) {
                     if (err.code === "SQLITE_CONSTRAINT_UNIQUE") {
-                        // username already taken
                         const e = new Error("USERNAME_TAKEN");
                         return reject(e);
                     }
@@ -288,7 +309,7 @@ function updateTransaction(userId, id, amount, type, category) {
             function (err) {
                 if (err) return reject(err);
                 if (this.changes === 0) {
-                    return resolve(null); // either not found or not owned by user
+                    return resolve(null);
                 }
 
                 db.get(
@@ -451,7 +472,6 @@ app.post("/api/auth/register", async (req, res) => {
     }
 
     try {
-        // Check if user already exists
         const existing = await findUserByUsername(username);
         if (existing) {
             return res.status(400).json({ error: "Username already taken." });
