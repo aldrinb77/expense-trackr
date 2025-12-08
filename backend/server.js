@@ -200,7 +200,8 @@ function generateToken(user) {
     // sub = subject (user id)
     const payload = {
         sub: user.id,
-        username: user.username
+        username: user.username,
+        createdAt: user.createdAt
     };
     return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
@@ -219,7 +220,8 @@ function authMiddleware(req, res, next) {
         const payload = jwt.verify(token, JWT_SECRET);
         req.user = {
             id: payload.sub,
-            username: payload.username
+            username: payload.username,
+            createdAt: payload.createdAt
         };
         next();
     } catch (err) {
@@ -481,7 +483,11 @@ app.post("/api/auth/register", async (req, res) => {
         const token = generateToken(user);
 
         res.status(201).json({
-            user: { id: user.id, username: user.username },
+            user: {
+                id: user.id,
+                username: user.username,
+                createdAt: user.createdAt
+            },
             token
         });
     } catch (error) {
@@ -515,23 +521,36 @@ app.post("/api/auth/login", async (req, res) => {
                 .status(401)
                 .json({ error: "Invalid username or password." });
         }
-
+        
         const token = generateToken(user);
 
         res.json({
-            user: { id: user.id, username: user.username },
+            user: {
+                id: user.id,
+                username: user.username,
+                createdAt: user.createdAt
+            },
             token
         });
     } catch (error) {
-        console.error("Error logging in:", error);
-        res.status(500).json({ error: "Failed to login" });
+        console.error("Error logging in user:", error);
+        res.status(500).json({ error: "Failed to log in user" });
     }
 });
 
 // Get current user from token
 app.get("/api/auth/me", authMiddleware, (req, res) => {
+            token
+        });
+
+// Get current user from token
+app.get("/api/auth/me", authMiddleware, (req, res) => {
     res.json({
-        user: { id: req.user.id, username: req.user.username }
+        user: {
+            id: req.user.id,
+            username: req.user.username,
+            createdAt: req.user.createdAt
+        }
     });
 });
 
