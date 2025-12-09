@@ -121,6 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const amountInput = document.getElementById("amount");
     const typeInput = document.getElementById("type");
     const categoryInput = document.getElementById("category");
+    const noteInput = document.getElementById("note");
     const formError = document.getElementById("form-error");
 
     const submitButton = document.getElementById("transaction-submit-button");
@@ -747,11 +748,11 @@ document.addEventListener("DOMContentLoaded", () => {
         data.forEach((tx) => transactions.push(tx));
     }
 
-    async function createTransactionOnServer(amount, type, category) {
+       async function createTransactionOnServer(amount, type, category, note) {
         return fetchJson(`${API_BASE_URL}/api/transactions`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ amount, type, category })
+            body: JSON.stringify({ amount, type, category, note })
         });
     }
 
@@ -1507,6 +1508,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (submitButton) submitButton.textContent = "Save Changes";
         if (cancelEditButton) cancelEditButton.style.display = "inline-block";
         if (editingHint) editingHint.style.display = "block";
+        if (noteInput) noteInput.value = transaction.note || "";
 
         if (formError) formError.textContent = "";
     }
@@ -1575,7 +1577,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const amountFormatted = tx.amount.toFixed(2);
             const dateTime = new Date(tx.createdAt).toLocaleString();
 
-            li.innerHTML = `
+                        li.innerHTML = `
                 <div class="transaction-main">
                     <span class="transaction-category">${tx.category}</span>
                     <span class="transaction-amount ${
@@ -1584,6 +1586,11 @@ document.addEventListener("DOMContentLoaded", () => {
                         ${sign} Rs ${amountFormatted}
                     </span>
                 </div>
+                ${
+                    tx.note
+                        ? `<div class="transaction-note">${tx.note}</div>`
+                        : ""
+                }
                 <div class="transaction-meta">
                     <span class="transaction-type">${
                         isCredit ? "Credit" : "Debit"
@@ -1670,6 +1677,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const amountValue = parseFloat(amountInput.value);
             const typeValue = typeInput.value;
             const categoryValue = categoryInput.value.trim();
+            const noteValue = noteInput ? noteInput.value.trim() : "";
 
             if (isNaN(amountValue) || amountValue <= 0) {
                 formError.textContent = "Please enter a valid positive amount.";
@@ -1683,11 +1691,12 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             try {
-                if (editingTransactionId === null) {
+                               if (editingTransactionId === null) {
                     const created = await createTransactionOnServer(
                         amountValue,
                         typeValue,
-                        categoryValue
+                        categoryValue,
+                        noteValue
                     );
                     transactions.push(created);
                 } else {
@@ -1696,7 +1705,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         {
                             amount: amountValue,
                             type: typeValue,
-                            category: categoryValue
+                            category: categoryValue,
+                            note: noteValue
                         }
                     );
                     const index = transactions.findIndex(

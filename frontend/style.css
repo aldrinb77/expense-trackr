@@ -644,7 +644,34 @@ body.dark-theme .loading-spinner {
     align-items: center;
     gap: 8px;
 }
+/* Brand block with logo + text */
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
 
+.brand-logo {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background-image: url("logo.png");
+    background-size: cover;
+    background-position: center top;
+    background-repeat: no-repeat;
+    flex-shrink: 0;
+}
+
+.brand-text h1 {
+    font-size: 1.3rem;
+    margin-bottom: 0;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.brand-text .tagline {
+    margin-top: 2px;
+}
 /* Top navigation */
 .top-nav {
     display: flex;
@@ -735,6 +762,9 @@ body.dark-theme .icon-button:hover {
 body.dark-theme .modal-content {
     background-color: #1f1f1f;
     color: #eeeeee;
+}
+body.dark-theme .brand-logo {
+    filter: brightness(0.9);
 }
 /* Profile section inside Account card */
 .profile-row {
@@ -850,4 +880,10 @@ body.dark-theme .avatar-preview {
     background-color: #1e3a8a;
     border-color: #3b82f6;
     color: #e3f2fd;
+}
+/* Transaction note line */
+.transaction-note {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    margin-top: 2px;
 }
