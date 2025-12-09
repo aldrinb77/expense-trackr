@@ -1611,6 +1611,43 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+        // === Avatar helpers ===
+
+    let pendingAvatarDataUrl = null;
+
+    function setAvatarPreviewFromCurrentUser() {
+        if (!avatarPreviewEl) return;
+        if (currentUser && currentUser.avatar) {
+            avatarPreviewEl.style.backgroundImage = `url(${currentUser.avatar})`;
+            avatarPreviewEl.textContent = "";
+        } else if (currentUser && currentUser.username) {
+            avatarPreviewEl.style.backgroundImage = "none";
+            avatarPreviewEl.textContent = currentUser.username
+                .charAt(0)
+                .toUpperCase();
+        } else {
+            avatarPreviewEl.style.backgroundImage = "none";
+            avatarPreviewEl.textContent = "?";
+        }
+    }
+
+    function setAvatarPreviewFromDataUrl(dataUrl) {
+        if (!avatarPreviewEl) return;
+        if (dataUrl) {
+            avatarPreviewEl.style.backgroundImage = `url(${dataUrl})`;
+            avatarPreviewEl.textContent = "";
+        } else {
+            setAvatarPreviewFromCurrentUser();
+        }
+    }
+
+    async function saveAvatarOnServer(avatarDataUrl) {
+        return fetchJson(`${API_BASE_URL}/api/user/avatar`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ avatar: avatarDataUrl })
+        });
+    }
     // === Transactions rendering & edit ===
 
     function renderTransactions() {
