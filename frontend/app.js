@@ -1,14 +1,6 @@
-// Frontend logic for Expense Tracker
-// Features:
-// - Multi-user auth (login/register, JWT)
-// - Per-user transactions in backend (SQLite)
-// - Per-user monthly saving goal
-// - Daily/weekly/monthly/yearly summaries
-// - Charts: category (month), debit 7 days, net cash flow 90 days
-// - Category totals table (month)
-// - Category budgets (per month, per user) with progress
-// - Optional date range filter for the transactions list
-// - Dark mode toggle
+// Frontend logic for Expense Trackr
+// Features: multi-user auth, avatars, notes, budgets, saving goal, charts,
+// date-range filter, profile activity/streaks, JSON backup, CSV export, etc.
 
 // Use local backend when running from file:// or localhost,
 // otherwise use the deployed backend on Render.
@@ -21,46 +13,57 @@ const API_BASE_URL = isLocal
     ? "http://localhost:4000"
     : "https://expense-trackr-backend.onrender.com";
 
-// Keys for LocalStorage
+// LocalStorage keys
 const AUTH_TOKEN_KEY = "expense-tracker-auth-token-v1";
 const AUTH_USER_KEY = "expense-tracker-auth-user-v1";
 const THEME_KEY = "expense-tracker-theme-v1";
 
 // In-memory data
 const transactions = [];
-const categoryBudgets = []; // { category, monthlyBudget }
-let savingGoalAmount = null; // number or null
+const categoryBudgets = [];
+let savingGoalAmount = null;
 let categoryChart = null;
 let dailyChart = null;
 let netTrendChart = null;
 let editingTransactionId = null;
 
 // Auth state
-let authToken = null; // JWT token string or null
-let currentUser = null; // { id, username } or null
+let authToken = null;
+let currentUser = null;
 
 // Filters
 const filters = {
-    type: "all", // "all" | "debit" | "credit"
-    category: "" // lowercase substring
+    type: "all",
+    category: ""
 };
 
-// Date range filter (affects transactions list + range summary)
+// Date range filter for transaction list
 const currentRange = {
-    from: null, // Date or null (inclusive)
-    to: null // Date or null (inclusive)
+    from: null,
+    to: null
 };
+
+// Default quick categories
+const DEFAULT_QUICK_CATEGORIES = [
+    "Food",
+    "Groceries",
+    "Transport",
+    "Rent",
+    "Shopping",
+    "Bills",
+    "Others"
+];
 
 document.addEventListener("DOMContentLoaded", () => {
     // === Element references ===
 
-    // Theme
+    // Theme / global
     const themeToggleCheckbox = document.getElementById(
         "theme-toggle-checkbox"
     );
-
     const toastContainer = document.getElementById("toast-container");
     const globalLoadingEl = document.getElementById("global-loading");
+    const statusElement = document.getElementById("status-text");
 
     // Profile & avatar
     const profileAvatarEl = document.getElementById("profile-avatar");
@@ -71,7 +74,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const profileMonthDebitEl = document.getElementById("profile-month-debit");
     const profileMonthCreditEl = document.getElementById("profile-month-credit");
     const profileMonthNetEl = document.getElementById("profile-month-net");
-
+    const profileLastActivityEl = document.getElementById(
+        "profile-last-activity"
+    );
+    const profileActiveDays30El = document.getElementById(
+        "profile-active-days-30"
+    );
+    const profileCurrentStreakEl = document.getElementById(
+        "profile-current-streak"
+    );
+    const profileBestStreakEl = document.getElementById(
+        "profile-best-streak"
+    );
     const changeAvatarButton = document.getElementById("change-avatar-button");
     const avatarModal = document.getElementById("avatar-modal");
     const avatarPreviewEl = document.getElementById("avatar-preview");
@@ -85,62 +99,55 @@ document.addEventListener("DOMContentLoaded", () => {
     const helpButton = document.getElementById("help-button");
     const helpModal = document.getElementById("help-modal");
     const helpModalClose = document.getElementById("help-modal-close");
-
     const navButtons = document.querySelectorAll(
         ".nav-link[data-scroll-target]"
     );
-    const appTitleEl = document.querySelector(".app-header h1");
+    const appTitleEl = document.querySelector(".brand-text h1");
 
     // Auth
     const authLoggedOut = document.getElementById("auth-logged-out");
     const authLoggedIn = document.getElementById("auth-logged-in");
     const currentUsernameEl = document.getElementById("current-username");
-
     const loginForm = document.getElementById("login-form");
     const loginUsernameInput = document.getElementById("login-username");
     const loginPasswordInput = document.getElementById("login-password");
     const loginErrorEl = document.getElementById("login-error");
-
     const registerForm = document.getElementById("register-form");
     const registerUsernameInput = document.getElementById("register-username");
     const registerPasswordInput = document.getElementById("register-password");
     const registerPassword2Input = document.getElementById("register-password2");
     const registerErrorEl = document.getElementById("register-error");
-
     const showRegisterButton = document.getElementById("show-register");
     const showLoginButton = document.getElementById("show-login");
     const logoutButton = document.getElementById("logout-button");
-
     const authRequiredSections = document.querySelectorAll(".requires-auth");
 
-    // Status
-    const statusElement = document.getElementById("status-text");
-
-    // Transactions form & list
+    // Transaction form & list
     const form = document.getElementById("transaction-form");
     const amountInput = document.getElementById("amount");
     const typeInput = document.getElementById("type");
     const categoryInput = document.getElementById("category");
     const noteInput = document.getElementById("note");
     const formError = document.getElementById("form-error");
-
     const submitButton = document.getElementById("transaction-submit-button");
     const cancelEditButton = document.getElementById("transaction-cancel-edit");
     const editingHint = document.getElementById("editing-hint");
-
     const transactionList = document.getElementById("transaction-list");
     const noTransactionsText = document.getElementById("no-transactions");
     const noTransactionsFilteredText = document.getElementById(
         "no-transactions-filtered"
     );
 
-    // Type/category filters
+    // Filters
     const filterTypeSelect = document.getElementById("filter-type");
     const filterCategoryInput = document.getElementById("filter-category");
     const filterResetButton = document.getElementById("filter-reset");
     const downloadCsvButton = document.getElementById("download-csv");
+    const downloadJsonButton = document.getElementById("download-json");
+    const importJsonButton = document.getElementById("import-json");
+    const jsonImportInput = document.getElementById("json-import-input");
 
-    // Date range filter
+    // Date range
     const rangePresetSelect = document.getElementById("range-preset");
     const rangeFromInput = document.getElementById("range-from");
     const rangeToInput = document.getElementById("range-to");
@@ -148,23 +155,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const rangeClearButton = document.getElementById("range-clear");
     const rangeSummaryText = document.getElementById("range-summary-text");
 
-    // Summary elements
+    // Summary
     const todayDebitEl = document.getElementById("today-debit");
     const todayCreditEl = document.getElementById("today-credit");
     const todayNetEl = document.getElementById("today-net");
-
     const weekDebitEl = document.getElementById("week-debit");
     const weekCreditEl = document.getElementById("week-credit");
     const weekNetEl = document.getElementById("week-net");
-
     const monthDebitEl = document.getElementById("month-debit");
     const monthCreditEl = document.getElementById("month-credit");
     const monthNetEl = document.getElementById("month-net");
-
     const yearDebitEl = document.getElementById("year-debit");
     const yearCreditEl = document.getElementById("year-credit");
     const yearNetEl = document.getElementById("year-net");
-
     const overallDebitEl = document.getElementById("overall-debit");
     const overallCreditEl = document.getElementById("overall-credit");
     const overallNetEl = document.getElementById("overall-net");
@@ -178,16 +181,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const savingGoalStatusEl = document.getElementById("saving-goal-status");
     const savingGoalProgressEl = document.getElementById("saving-goal-progress");
 
-    // Charts empties
+    // Chart empties
     const categoryChartEmpty = document.getElementById("category-chart-empty");
     const dailyChartEmpty = document.getElementById("daily-chart-empty");
     const netTrendChartEmpty = document.getElementById("net-trend-chart-empty");
 
-    // Category totals
+    // Category totals & budgets
     const categoryTotalsBody = document.getElementById("category-totals-body");
     const categoryTotalsEmpty = document.getElementById("category-totals-empty");
-
-    // Category budgets
+    const topCategoriesSummaryEl = document.getElementById(
+        "top-categories-summary"
+    );
     const categoryBudgetForm = document.getElementById("category-budget-form");
     const budgetCategoryInput = document.getElementById("budget-category");
     const budgetAmountInput = document.getElementById("budget-amount");
@@ -199,28 +203,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const categoryBudgetsTable = document.getElementById(
         "category-budgets-table"
     );
+    const quickCategoryChipsContainer = document.getElementById(
+        "quick-category-chips"
+    );
 
-    // === from here on, rest of your code (helpers, event handlers, etc.) ===
+    // --- Status ---
 
-    // === Status text ===
     if (statusElement) {
         const now = new Date();
-        const formattedTime = now.toLocaleString();
-        statusElement.textContent = `JavaScript is working. Page loaded at: ${formattedTime}`;
+        statusElement.textContent =
+            "JavaScript is working. Page loaded at: " +
+            now.toLocaleString();
         statusElement.style.color = "#2e7d32";
     }
-    function formatDateOnly(isoString) {
-        if (!isoString) return null;
-        const d = new Date(isoString);
-        if (isNaN(d.getTime())) return null;
-        return d.toLocaleDateString(undefined, {
-            year: "numeric",
-            month: "short",
-            day: "2-digit"
-        });
-    }
-    
-    // === Theme helpers ===
+
+    // === Theme ===
 
     function applyTheme(theme) {
         const mode = theme === "dark" ? "dark" : "light";
@@ -249,342 +246,48 @@ document.addEventListener("DOMContentLoaded", () => {
             saveTheme(theme);
         });
     }
-        // === Avatar helpers ===
 
-    let pendingAvatarDataUrl = null;
-
-    function setAvatarPreviewFromCurrentUser() {
-        if (!avatarPreviewEl) return;
-        if (currentUser && currentUser.avatar) {
-            avatarPreviewEl.style.backgroundImage = `url(${currentUser.avatar})`;
-            avatarPreviewEl.textContent = "";
-        } else if (currentUser && currentUser.username) {
-            avatarPreviewEl.style.backgroundImage = "none";
-            avatarPreviewEl.textContent = currentUser.username
-                .charAt(0)
-                .toUpperCase();
-        } else {
-            avatarPreviewEl.style.backgroundImage = "none";
-            avatarPreviewEl.textContent = "?";
-        }
-    }
-
-    function setAvatarPreviewFromDataUrl(dataUrl) {
-        if (!avatarPreviewEl) return;
-        if (dataUrl) {
-            avatarPreviewEl.style.backgroundImage = `url(${dataUrl})`;
-            avatarPreviewEl.textContent = "";
-        } else {
-            setAvatarPreviewFromCurrentUser();
-        }
-    }
-
-    async function saveAvatarOnServer(avatarDataUrl) {
-        return fetchJson(`${API_BASE_URL}/api/user/avatar`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ avatar: avatarDataUrl })
-        });
-    }
-    // === Toast & global loading helpers ===
+    // === Toast + loading ===
 
     function showToast(message, type = "success") {
         if (!toastContainer) return;
         const toast = document.createElement("div");
         toast.className = `toast toast-${type}`;
         toast.textContent = message;
-
         toastContainer.appendChild(toast);
-
-        // Trigger transition
-        requestAnimationFrame(() => {
-            toast.classList.add("visible");
-        });
-
-        // Auto-hide
+        requestAnimationFrame(() => toast.classList.add("visible"));
         setTimeout(() => {
             toast.classList.remove("visible");
             setTimeout(() => toast.remove(), 300);
         }, 3500);
     }
 
-    let globalLoadingCount = 0;
+    let loadingCount = 0;
 
     function showGlobalLoading() {
-        globalLoadingCount++;
+        loadingCount++;
         if (globalLoadingEl) {
             globalLoadingEl.style.display = "flex";
         }
     }
 
     function hideGlobalLoading() {
-        globalLoadingCount = Math.max(0, globalLoadingCount - 1);
-        if (globalLoadingCount === 0 && globalLoadingEl) {
+        loadingCount = Math.max(0, loadingCount - 1);
+        if (loadingCount === 0 && globalLoadingEl) {
             globalLoadingEl.style.display = "none";
         }
     }
-        // === Simple nav scroll & Help modal ===
 
-    function scrollToSectionById(id) {
-        const el = document.getElementById(id);
-        if (el) {
-            el.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-    }
-
-    if (navButtons && navButtons.length > 0) {
-        navButtons.forEach((btn) => {
-            btn.addEventListener("click", () => {
-                const targetId = btn.getAttribute("data-scroll-target");
-                if (targetId) scrollToSectionById(targetId);
-            });
-        });
-    }
-
-    if (helpButton && helpModal && helpModalClose) {
-        helpButton.addEventListener("click", () => {
-            helpModal.style.display = "flex";
-        });
-    if (appTitleEl && helpModal) {
-        appTitleEl.style.cursor = "pointer";
-        appTitleEl.addEventListener("click", () => {
-            helpModal.style.display = "flex";
-        });
-    }
-        helpModal.addEventListener("click", (event) => {
-            if (event.target === helpModal) {
-                helpModal.style.display = "none";
-            }
-        });
-
-        helpModalClose.addEventListener("click", () => {
-            helpModal.style.display = "none";
-        });
-    }
-        // Avatar modal behavior
-    if (changeAvatarButton && avatarModal && avatarPreviewEl) {
-        changeAvatarButton.addEventListener("click", () => {
-            pendingAvatarDataUrl = null;
-            if (avatarErrorEl) avatarErrorEl.textContent = "";
-            setAvatarPreviewFromCurrentUser();
-            avatarModal.style.display = "flex";
-        });
-    }
-
-    if (avatarCancelButton && avatarModal) {
-        avatarCancelButton.addEventListener("click", () => {
-            avatarModal.style.display = "none";
-        });
-    }
-
-    if (avatarModal) {
-        avatarModal.addEventListener("click", (event) => {
-            if (event.target === avatarModal) {
-                avatarModal.style.display = "none";
-            }
-        });
-    }
-
-    if (avatarFileInput) {
-        avatarFileInput.addEventListener("change", () => {
-            if (avatarErrorEl) avatarErrorEl.textContent = "";
-            const file = avatarFileInput.files && avatarFileInput.files[0];
-            if (!file) return;
-
-            // Simple size guard: ~200 KB
-            if (file.size > 200 * 1024) {
-                if (avatarErrorEl) {
-                    avatarErrorEl.textContent =
-                        "File is too large. Please select an image under 200 KB.";
-                }
-                avatarFileInput.value = "";
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = () => {
-                const result = reader.result;
-                if (typeof result === "string") {
-                    pendingAvatarDataUrl = result;
-                    setAvatarPreviewFromDataUrl(pendingAvatarDataUrl);
-                }
-            };
-            reader.onerror = () => {
-                if (avatarErrorEl) {
-                    avatarErrorEl.textContent =
-                        "Failed to read file. Please try again.";
-                }
-            };
-            reader.readAsDataURL(file);
-        });
-    }
-
-    if (avatarSaveButton) {
-        avatarSaveButton.addEventListener("click", async () => {
-            if (avatarErrorEl) avatarErrorEl.textContent = "";
-            if (!currentUser) {
-                if (avatarErrorEl) {
-                    avatarErrorEl.textContent = "You must be logged in.";
-                }
-                return;
-            }
-
-            if (!pendingAvatarDataUrl) {
-                if (avatarErrorEl) {
-                    avatarErrorEl.textContent =
-                        "Please choose an image or click Remove avatar.";
-                }
-                return;
-            }
-
-            try {
-                const data = await saveAvatarOnServer(pendingAvatarDataUrl);
-                currentUser.avatar = data.avatar || null;
-                saveAuthToStorage();
-                updateAuthUI();
-                avatarModal.style.display = "none";
-                avatarFileInput.value = "";
-                showToast("Avatar updated.", "success");
-            } catch (error) {
-                console.error(error);
-                if (error.status === 401) {
-                    if (avatarErrorEl) {
-                        avatarErrorEl.textContent =
-                            "Your session has expired. Please log in again.";
-                    }
-                    clearAuthState();
-                } else if (avatarErrorEl) {
-                    avatarErrorEl.textContent =
-                        "Failed to save avatar. Please try again.";
-                }
-            }
-        });
-    }
-
-    if (avatarRemoveButton) {
-        avatarRemoveButton.addEventListener("click", async () => {
-            if (avatarErrorEl) avatarErrorEl.textContent = "";
-            if (!currentUser) {
-                if (avatarErrorEl) {
-                    avatarErrorEl.textContent = "You must be logged in.";
-                }
-                return;
-            }
-
-            try {
-                const data = await saveAvatarOnServer(null);
-                currentUser.avatar = data.avatar || null;
-                saveAuthToStorage();
-                updateAuthUI();
-                avatarModal.style.display = "none";
-                avatarFileInput.value = "";
-                showToast("Avatar removed.", "success");
-            } catch (error) {
-                console.error(error);
-                if (error.status === 401) {
-                    if (avatarErrorEl) {
-                        avatarErrorEl.textContent =
-                            "Your session has expired. Please log in again.";
-                    }
-                    clearAuthState();
-                } else if (avatarErrorEl) {
-                    avatarErrorEl.textContent =
-                        "Failed to remove avatar. Please try again.";
-                }
-            }
-        });
-    }
-    // === Saving goal API helpers ===
-
-    async function loadSavingGoalFromServer() {
-        try {
-            const data = await fetchJson(`${API_BASE_URL}/api/saving-goal`);
-            if (data && typeof data.goal === "number" && data.goal >= 0) {
-                savingGoalAmount = data.goal;
-            } else {
-                savingGoalAmount = null;
-            }
-        } catch (error) {
-            console.error("Failed to load saving goal from server:", error);
-            savingGoalAmount = null;
-        }
-    }
-
-    async function saveSavingGoalToServer(goal) {
-        const body = { goal };
-        const data = await fetchJson(`${API_BASE_URL}/api/saving-goal`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body)
-        });
-
-        if (data && typeof data.goal === "number" && data.goal >= 0) {
-            savingGoalAmount = data.goal;
-        } else {
-            savingGoalAmount = null;
-        }
-    }
-
-    function syncSavingGoalInput() {
-        if (!savingGoalInput) return;
-        if (savingGoalAmount === null) {
-            savingGoalInput.value = "";
-        } else {
-            savingGoalInput.value = savingGoalAmount.toString();
-        }
-    }
-
-    // === Category budgets API helpers ===
-
-    async function loadCategoryBudgetsFromServer() {
-        try {
-            const data = await fetchJson(`${API_BASE_URL}/api/category-budgets`);
-            categoryBudgets.length = 0;
-            data.forEach((row) => {
-                if (
-                    row &&
-                    typeof row.category === "string" &&
-                    typeof row.monthlyBudget === "number"
-                ) {
-                    categoryBudgets.push({
-                        category: row.category,
-                        monthlyBudget: row.monthlyBudget
-                    });
-                }
-            });
-        } catch (error) {
-            console.error("Failed to load category budgets from server:", error);
-            categoryBudgets.length = 0;
-        }
-    }
-
-    async function saveCategoryBudgetOnServer(category, monthlyBudget) {
-        return fetchJson(`${API_BASE_URL}/api/category-budgets`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ category, monthlyBudget })
-        });
-    }
-
-    async function deleteCategoryBudgetOnServer(category) {
-        const encoded = encodeURIComponent(category);
-        return fetchJson(`${API_BASE_URL}/api/category-budgets/${encoded}`, {
-            method: "DELETE"
-        });
-    }
-
-    // === Auth LocalStorage helpers ===
+    // === Auth storage ===
 
     function loadAuthFromStorage() {
         const token = localStorage.getItem(AUTH_TOKEN_KEY);
         const userJson = localStorage.getItem(AUTH_USER_KEY);
-
         if (!token || !userJson) {
             authToken = null;
             currentUser = null;
             return;
         }
-
         try {
             const user = JSON.parse(userJson);
             if (
@@ -598,8 +301,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 authToken = null;
                 currentUser = null;
             }
-        } catch (error) {
-            console.error("Error parsing auth user from LocalStorage:", error);
+        } catch (e) {
+            console.error("Failed to parse stored user:", e);
             authToken = null;
             currentUser = null;
         }
@@ -614,8 +317,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             localStorage.setItem(AUTH_TOKEN_KEY, authToken);
             localStorage.setItem(AUTH_USER_KEY, JSON.stringify(currentUser));
-        } catch (error) {
-            console.error("Error saving auth to LocalStorage:", error);
+        } catch (e) {
+            console.error("Failed to save auth:", e);
         }
     }
 
@@ -623,12 +326,23 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             localStorage.removeItem(AUTH_TOKEN_KEY);
             localStorage.removeItem(AUTH_USER_KEY);
-        } catch (error) {
-            console.error("Error clearing auth from LocalStorage:", error);
+        } catch (e) {
+            console.error("Failed to clear auth:", e);
         }
     }
 
-      function updateAuthUI() {
+    function formatDateOnly(iso) {
+        if (!iso) return null;
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return null;
+        return d.toLocaleDateString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "2-digit"
+        });
+    }
+
+    function updateAuthUI() {
         const loggedIn = !!currentUser;
 
         if (authLoggedIn) {
@@ -644,7 +358,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (profileAvatarEl) {
             if (loggedIn && currentUser.avatar) {
-                profileAvatarEl.style.backgroundImage = `url(${currentUser.avatar})`;
+                profileAvatarEl.style.backgroundImage =
+                    `url(${currentUser.avatar})`;
                 profileAvatarEl.textContent = "";
             } else if (loggedIn && currentUser.username) {
                 profileAvatarEl.style.backgroundImage = "none";
@@ -678,7 +393,6 @@ document.addEventListener("DOMContentLoaded", () => {
         authToken = token;
         saveAuthToStorage();
 
-        // When user changes, reset local data, budgets and saving goal
         transactions.length = 0;
         categoryBudgets.length = 0;
         savingGoalAmount = null;
@@ -687,7 +401,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         renderTransactions();
         updateSummaries();
-
         updateAuthUI();
     }
 
@@ -704,73 +417,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         renderTransactions();
         updateSummaries();
-
         updateAuthUI();
     }
 
-    // === Backend API helpers ===
-
-    async function fetchJson(url, options = {}) {
-        const headers = options.headers ? { ...options.headers } : {};
-
-        // Attach auth token if we have one
-        if (authToken) {
-            headers["Authorization"] = `Bearer ${authToken}`;
-        }
-
-        const finalOptions = { ...options, headers };
-
-        const response = await fetch(url, finalOptions);
-
-        let data = null;
-        try {
-            data = await response.json();
-        } catch {
-            // response had no JSON body (e.g., empty)
-        }
-
-        if (!response.ok) {
-            const error = new Error(
-                data && data.error
-                    ? data.error
-                    : `Request failed with status ${response.status}`
-            );
-            error.status = response.status;
-            throw error;
-        }
-
-        return data;
-    }
-
-    async function loadTransactionsFromServer() {
-        const data = await fetchJson(`${API_BASE_URL}/api/transactions`);
-        transactions.length = 0;
-        data.forEach((tx) => transactions.push(tx));
-    }
-
-       async function createTransactionOnServer(amount, type, category, note) {
-        return fetchJson(`${API_BASE_URL}/api/transactions`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ amount, type, category, note })
-        });
-    }
-
-    async function updateTransactionOnServer(id, payload) {
-        return fetchJson(`${API_BASE_URL}/api/transactions/${id}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-    }
-
-    async function deleteTransactionOnServer(id) {
-        return fetchJson(`${API_BASE_URL}/api/transactions/${id}`, {
-            method: "DELETE"
-        });
-    }
-
-    // === Date helper functions ===
+    // === Date helpers ===
 
     function getStartOfToday() {
         const d = new Date();
@@ -784,12 +434,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return d;
     }
 
-    // Week: Monday as first day of week
     function getStartOfWeek() {
         const d = new Date();
         d.setHours(0, 0, 0, 0);
-        const day = d.getDay(); // 0 (Sun) - 6 (Sat)
-        const diff = day === 0 ? -6 : 1 - day; // move to Monday
+        const day = d.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
         d.setDate(d.getDate() + diff);
         return d;
     }
@@ -815,7 +464,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function getStartOfYear() {
         const d = new Date();
-        d.setMonth(0, 1); // Jan 1
+        d.setMonth(0, 1);
         d.setHours(0, 0, 0, 0);
         return d;
     }
@@ -826,7 +475,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return d;
     }
 
-    // Date range helpers
     function parseDateInput(value) {
         if (!value) return null;
         const d = new Date(value + "T00:00:00");
@@ -913,15 +561,335 @@ document.addEventListener("DOMContentLoaded", () => {
         rangeSummaryText.textContent =
             `${parts.join(" ")} – Debit: Rs ${debit.toFixed(
                 2
-            )}, ` +
-            `Credit: Rs ${credit.toFixed(
+            )}, Credit: Rs ${credit.toFixed(
                 2
             )}, Net: Rs ${net.toFixed(
                 2
             )}. (Range affects the transactions list only.)`;
     }
 
-    // === Saving goal UI update ===
+    // === Activity & streaks ===
+
+    function computeActivityStats() {
+        const stats = {
+            lastActivity: null,
+            activeDaysLast30: 0,
+            currentStreak: 0,
+            bestStreak: 0
+        };
+
+        if (transactions.length === 0) return stats;
+
+        const dayMs = 24 * 60 * 60 * 1000;
+        const today = getStartOfToday();
+        const todayIdx = Math.floor(today.getTime() / dayMs);
+
+        const cutoff = new Date(today);
+        cutoff.setDate(cutoff.getDate() - 29);
+        cutoff.setHours(0, 0, 0, 0);
+        const cutoffIdx = Math.floor(cutoff.getTime() / dayMs);
+
+        const daySet = new Set();
+        let lastActivityDate = null;
+
+        transactions.forEach((tx) => {
+            const d = new Date(tx.createdAt);
+            if (isNaN(d.getTime())) return;
+            const d0 = new Date(d);
+            d0.setHours(0, 0, 0, 0);
+            const idx = Math.floor(d0.getTime() / dayMs);
+            daySet.add(idx);
+            if (!lastActivityDate || d > lastActivityDate) {
+                lastActivityDate = d;
+            }
+        });
+
+        stats.lastActivity = lastActivityDate;
+
+        let active30 = 0;
+        daySet.forEach((idx) => {
+            if (idx >= cutoffIdx && idx <= todayIdx) active30++;
+        });
+        stats.activeDaysLast30 = active30;
+
+        const daysArr = Array.from(daySet).sort((a, b) => a - b);
+        if (daysArr.length === 0) {
+            stats.bestStreak = 0;
+            stats.currentStreak = 0;
+            return stats;
+        }
+
+        let best = 1;
+        let current = 1;
+        for (let i = 1; i < daysArr.length; i++) {
+            if (daysArr[i] === daysArr[i - 1] + 1) {
+                current++;
+                if (current > best) best = current;
+            } else {
+                current = 1;
+            }
+        }
+        stats.bestStreak = best;
+
+        if (!daySet.has(todayIdx)) {
+            stats.currentStreak = 0;
+        } else {
+            let streak = 1;
+            let idx = todayIdx - 1;
+            while (daySet.has(idx)) {
+                streak++;
+                idx--;
+            }
+            stats.currentStreak = streak;
+        }
+
+        return stats;
+    }
+
+    // === Quick category chips ===
+
+    function createQuickChip(label) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "quick-chip";
+        btn.textContent = label;
+        btn.addEventListener("click", () => {
+            if (categoryInput) {
+                categoryInput.value = label;
+                categoryInput.focus();
+            }
+        });
+        return btn;
+    }
+
+    function populateQuickCategoryChips(categoriesArray) {
+        if (!quickCategoryChipsContainer) return;
+        quickCategoryChipsContainer.innerHTML = "";
+
+        const source =
+            categoriesArray && categoriesArray.length > 0
+                ? categoriesArray
+                : DEFAULT_QUICK_CATEGORIES;
+
+        source.forEach((cat) => {
+            quickCategoryChipsContainer.appendChild(createQuickChip(cat));
+        });
+    }
+
+    // === API helpers ===
+
+    async function fetchJson(url, options = {}) {
+        const headers = options.headers ? { ...options.headers } : {};
+        if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+        const resp = await fetch(url, { ...options, headers });
+        let data = null;
+        try {
+            data = await resp.json();
+        } catch (_) {}
+        if (!resp.ok) {
+            const error = new Error(
+                data && data.error
+                    ? data.error
+                    : `Request failed with status ${resp.status}`
+            );
+            error.status = resp.status;
+            throw error;
+        }
+        return data;
+    }
+
+    async function loadTransactionsFromServer() {
+        const data = await fetchJson(`${API_BASE_URL}/api/transactions`);
+        transactions.length = 0;
+        data.forEach((tx) => transactions.push(tx));
+    }
+
+    async function loadSavingGoalFromServer() {
+        try {
+            const data = await fetchJson(`${API_BASE_URL}/api/saving-goal`);
+            if (data && typeof data.goal === "number" && data.goal >= 0) {
+                savingGoalAmount = data.goal;
+            } else {
+                savingGoalAmount = null;
+            }
+        } catch (e) {
+            console.error("Failed to load saving goal:", e);
+            savingGoalAmount = null;
+        }
+    }
+
+    async function saveSavingGoalToServer(goal) {
+        const data = await fetchJson(`${API_BASE_URL}/api/saving-goal`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ goal })
+        });
+        if (data && typeof data.goal === "number" && data.goal >= 0) {
+            savingGoalAmount = data.goal;
+        } else {
+            savingGoalAmount = null;
+        }
+    }
+
+    async function loadCategoryBudgetsFromServer() {
+        try {
+            const data = await fetchJson(`${API_BASE_URL}/api/category-budgets`);
+            categoryBudgets.length = 0;
+            data.forEach((row) => {
+                if (
+                    row &&
+                    typeof row.category === "string" &&
+                    typeof row.monthlyBudget === "number"
+                ) {
+                    categoryBudgets.push({
+                        category: row.category,
+                        monthlyBudget: row.monthlyBudget
+                    });
+                }
+            });
+        } catch (e) {
+            console.error("Failed to load budgets:", e);
+            categoryBudgets.length = 0;
+        }
+    }
+
+    async function saveCategoryBudgetOnServer(category, monthlyBudget) {
+        return fetchJson(`${API_BASE_URL}/api/category-budgets`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ category, monthlyBudget })
+        });
+    }
+
+    async function deleteCategoryBudgetOnServer(category) {
+        const encoded = encodeURIComponent(category);
+        return fetchJson(`${API_BASE_URL}/api/category-budgets/${encoded}`, {
+            method: "DELETE"
+        });
+    }
+
+    async function createTransactionOnServer(amount, type, category, note) {
+        return fetchJson(`${API_BASE_URL}/api/transactions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount, type, category, note })
+        });
+    }
+
+    async function updateTransactionOnServer(id, payload) {
+        return fetchJson(`${API_BASE_URL}/api/transactions/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+    }
+
+    async function deleteTransactionOnServer(id) {
+        return fetchJson(`${API_BASE_URL}/api/transactions/${id}`, {
+            method: "DELETE"
+        });
+    }
+
+    async function downloadJsonBackup() {
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/api/export/json`,
+                {
+                    headers: authToken
+                        ? { Authorization: `Bearer ${authToken}` }
+                        : {}
+                }
+            );
+
+            if (!response.ok) {
+                const text = await response.text().catch(() => "");
+                throw new Error(
+                    `Export failed (${response.status}): ${text}`
+                );
+            }
+
+            const data = await response.json();
+            const blob = new Blob([JSON.stringify(data, null, 2)], {
+                type: "application/json"
+            });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            const stamp = new Date().toISOString().slice(0, 10);
+            a.href = url;
+            a.download = `expense-trackr-backup-${stamp}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+            showToast("JSON backup downloaded.", "success");
+        } catch (e) {
+            console.error("JSON export error:", e);
+            showToast("Failed to download JSON backup.", "error");
+        }
+    }
+
+    async function importJsonBackupFromFile(file) {
+        if (!file) return;
+        try {
+            const text = await file.text();
+            let parsed = null;
+            try {
+                parsed = JSON.parse(text);
+            } catch (_) {
+                showToast("Invalid JSON file.", "error");
+                return;
+            }
+
+            const confirmed = window.confirm(
+                "Importing a backup will replace your current transactions, budgets, and saving goal for this account. Continue?"
+            );
+            if (!confirmed) return;
+
+            showGlobalLoading();
+            try {
+                await fetchJson(`${API_BASE_URL}/api/import/json`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(parsed)
+                });
+
+                await loadTransactionsFromServer();
+                await loadSavingGoalFromServer();
+                await loadCategoryBudgetsFromServer();
+
+                renderTransactions();
+                updateSummaries();
+
+                showToast("Backup imported successfully.", "success");
+            } finally {
+                hideGlobalLoading();
+            }
+        } catch (e) {
+            console.error(e);
+            if (e.status === 401) {
+                showToast(
+                    "Your session has expired. Please log in again.",
+                    "error"
+                );
+                clearAuthState();
+            } else {
+                showToast("Failed to import JSON backup.", "error");
+            }
+        } finally {
+            if (jsonImportInput) jsonImportInput.value = "";
+        }
+    }
+
+    // === Saving goal UI ===
+
+    function syncSavingGoalInput() {
+        if (!savingGoalInput) return;
+        if (savingGoalAmount === null) {
+            savingGoalInput.value = "";
+        } else {
+            savingGoalInput.value = savingGoalAmount.toString();
+        }
+    }
 
     function updateSavingGoalUI(currentMonthNet) {
         if (
@@ -929,9 +897,8 @@ document.addEventListener("DOMContentLoaded", () => {
             !savingGoalDisplayEl ||
             !savingGoalStatusEl ||
             !savingGoalProgressEl
-        ) {
+        )
             return;
-        }
 
         savingCurrentNetEl.textContent = `Rs ${currentMonthNet.toFixed(2)}`;
 
@@ -975,7 +942,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // === Chart data helpers ===
+    // === Chart helpers ===
 
     function getCategoryTotalsForCurrentMonth() {
         const monthStart = getStartOfMonth();
@@ -984,13 +951,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         transactions.forEach((tx) => {
             if (tx.type !== "debit") return;
-
             const created = new Date(tx.createdAt);
             if (isNaN(created.getTime())) return;
-
             if (created >= monthStart && created < nextMonthStart) {
-                const category = tx.category || "Uncategorized";
-                totals[category] = (totals[category] || 0) + tx.amount;
+                const cat = tx.category || "Uncategorized";
+                totals[cat] = (totals[cat] || 0) + tx.amount;
             }
         });
 
@@ -1008,7 +973,6 @@ document.addEventListener("DOMContentLoaded", () => {
             nextDay.setDate(dayStart.getDate() + 1);
 
             let total = 0;
-
             transactions.forEach((tx) => {
                 if (tx.type !== "debit") return;
                 const created = new Date(tx.createdAt);
@@ -1063,8 +1027,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return results;
     }
 
-    // === Chart update functions ===
-
     function updateCategoryChart() {
         const canvas = document.getElementById("category-chart");
         if (!canvas) return;
@@ -1073,7 +1035,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const labels = Object.keys(totals);
         const data = Object.values(totals);
 
-        if (labels.length === 0 || data.length === 0) {
+        if (!labels.length) {
             if (categoryChart) {
                 categoryChart.destroy();
                 categoryChart = null;
@@ -1099,7 +1061,7 @@ document.addEventListener("DOMContentLoaded", () => {
             "#607d8b"
         ];
         const colors = labels.map(
-            (_, index) => baseColors[index % baseColors.length]
+            (_, i) => baseColors[i % baseColors.length]
         );
 
         if (categoryChart) {
@@ -1112,12 +1074,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 type: "doughnut",
                 data: {
                     labels,
-                    datasets: [
-                        {
-                            data,
-                            backgroundColor: colors
-                        }
-                    ]
+                    datasets: [{ data, backgroundColor: colors }]
                 },
                 options: {
                     responsive: true,
@@ -1142,7 +1099,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const dailyData = getDailyDebitTotalsLast7Days();
         const labels = dailyData.map((d) => d.label);
         const data = dailyData.map((d) => Number(d.total.toFixed(2)));
-
         const allZero = data.every((v) => v === 0);
 
         if (allZero) {
@@ -1177,15 +1133,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 },
                 options: {
                     responsive: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
+                    plugins: { legend: { display: false } },
                     scales: {
-                        y: {
-                            beginAtZero: true
-                        }
+                        y: { beginAtZero: true }
                     }
                 }
             });
@@ -1199,7 +1149,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const dataPoints = getNetDailyTotalsLastNDays(90);
         const labels = dataPoints.map((d) => d.label);
         const data = dataPoints.map((d) => Number(d.net.toFixed(2)));
-
         const allZero = data.every((v) => v === 0);
 
         if (allZero) {
@@ -1238,9 +1187,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 },
                 options: {
                     responsive: true,
-                    plugins: {
-                        legend: { display: false }
-                    },
+                    plugins: { legend: { display: false } },
                     scales: {
                         y: { beginAtZero: true }
                     }
@@ -1251,7 +1198,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function updateCharts() {
         if (typeof Chart === "undefined") {
-            console.warn("Chart.js not loaded; charts will not be displayed.");
+            console.warn("Chart.js not loaded");
             return;
         }
         updateCategoryChart();
@@ -1259,7 +1206,7 @@ document.addEventListener("DOMContentLoaded", () => {
         updateNetTrendChart();
     }
 
-    // === Category totals table ===
+    // === Category totals & top summary ===
 
     function renderCategoryTotalsTable() {
         if (!categoryTotalsBody || !categoryTotalsEmpty) return;
@@ -1268,12 +1215,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const categories = Object.keys(totals);
 
         categoryTotalsBody.innerHTML = "";
-
         const table = categoryTotalsBody.closest("table");
 
-        if (categories.length === 0) {
+        if (!categories.length) {
             if (categoryTotalsEmpty) categoryTotalsEmpty.style.display = "block";
             if (table) table.style.display = "none";
+            if (topCategoriesSummaryEl) {
+                topCategoriesSummaryEl.textContent =
+                    "No expenses yet to highlight top categories.";
+            }
+            populateQuickCategoryChips([]);
             return;
         }
 
@@ -1284,40 +1235,46 @@ document.addEventListener("DOMContentLoaded", () => {
             (sum, cat) => sum + totals[cat],
             0
         );
+        const sorted = categories.sort((a, b) => totals[b] - totals[a]);
 
-        const sortedCategories = categories.sort(
-            (a, b) => totals[b] - totals[a]
-        );
+        if (topCategoriesSummaryEl) {
+            const top = sorted.slice(0, 3).map((cat) => {
+                const amt = totals[cat];
+                const pct = grandTotal > 0 ? (amt / grandTotal) * 100 : 0;
+                return `${cat} (Rs ${amt.toFixed(2)}, ${pct.toFixed(1)}%)`;
+            });
+            topCategoriesSummaryEl.textContent =
+                "Top categories: " + top.join(" · ");
+        }
 
-        sortedCategories.forEach((category) => {
-            const amount = totals[category];
-            const percent =
-                grandTotal > 0 ? (amount / grandTotal) * 100 : 0;
+        populateQuickCategoryChips(sorted.slice(0, 6));
 
+        sorted.forEach((cat) => {
+            const amt = totals[cat];
+            const pct = grandTotal > 0 ? (amt / grandTotal) * 100 : 0;
             const tr = document.createElement("tr");
             tr.innerHTML = `
-                <td>${category}</td>
-                <td class="amount-cell">Rs ${amount.toFixed(2)}</td>
-                <td class="percent-cell">${percent.toFixed(1)}%</td>
+                <td>${cat}</td>
+                <td class="amount-cell">Rs ${amt.toFixed(2)}</td>
+                <td class="percent-cell">${pct.toFixed(1)}%</td>
             `;
             categoryTotalsBody.appendChild(tr);
         });
     }
 
-    // === Category budgets table ===
+    // === Category budgets ===
 
     function renderCategoryBudgetsTable() {
         if (
             !categoryBudgetsBody ||
             !categoryBudgetsEmpty ||
             !categoryBudgetsTable
-        ) {
+        )
             return;
-        }
 
         categoryBudgetsBody.innerHTML = "";
 
-        if (categoryBudgets.length === 0) {
+        if (!categoryBudgets.length) {
             categoryBudgetsEmpty.style.display = "block";
             categoryBudgetsTable.style.display = "none";
             return;
@@ -1327,16 +1284,15 @@ document.addEventListener("DOMContentLoaded", () => {
         categoryBudgetsTable.style.display = "table";
 
         const monthTotals = getCategoryTotalsForCurrentMonth();
-
-        const sortedBudgets = categoryBudgets
+        const sorted = categoryBudgets
             .slice()
             .sort((a, b) =>
                 a.category.toLowerCase().localeCompare(b.category.toLowerCase())
             );
 
-        sortedBudgets.forEach((budget) => {
-            const category = budget.category;
-            const limit = budget.monthlyBudget;
+        sorted.forEach((b) => {
+            const category = b.category;
+            const limit = b.monthlyBudget;
             const spent = monthTotals[category] || 0;
             const remaining = limit - spent;
             const usedRatio =
@@ -1360,11 +1316,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </td>
                 <td class="amount-cell">${statusText}</td>
                 <td>
-                    <button
-                        type="button"
-                        class="secondary-button small delete-budget-button"
-                        data-category="${category}"
-                    >
+                    <button type="button" class="secondary-button small delete-budget-button" data-category="${category}">
                         Delete
                     </button>
                 </td>
@@ -1373,18 +1325,15 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // === Summary calculation and rendering ===
+    // === Summaries ===
 
     function updateSummaries() {
         const todayStart = getStartOfToday();
         const tomorrowStart = getStartOfTomorrow();
-
         const weekStart = getStartOfWeek();
         const nextWeekStart = getStartOfNextWeek();
-
         const monthStart = getStartOfMonth();
         const nextMonthStart = getStartOfNextMonth();
-
         const yearStart = getStartOfYear();
         const nextYearStart = getStartOfNextYear();
 
@@ -1395,53 +1344,33 @@ document.addEventListener("DOMContentLoaded", () => {
         const overall = { debit: 0, credit: 0 };
 
         transactions.forEach((tx) => {
-            const amount = tx.amount;
+            const amt = tx.amount;
             const isDebit = tx.type === "debit";
 
-            // Overall
-            if (isDebit) {
-                overall.debit += amount;
-            } else {
-                overall.credit += amount;
-            }
+            if (isDebit) overall.debit += amt;
+            else overall.credit += amt;
 
             const created = new Date(tx.createdAt);
             if (isNaN(created.getTime())) return;
 
-            // Today
             if (created >= todayStart && created < tomorrowStart) {
-                if (isDebit) {
-                    today.debit += amount;
-                } else {
-                    today.credit += amount;
-                }
+                if (isDebit) today.debit += amt;
+                else today.credit += amt;
             }
 
-            // This week
             if (created >= weekStart && created < nextWeekStart) {
-                if (isDebit) {
-                    week.debit += amount;
-                } else {
-                    week.credit += amount;
-                }
+                if (isDebit) week.debit += amt;
+                else week.credit += amt;
             }
 
-            // This month
             if (created >= monthStart && created < nextMonthStart) {
-                if (isDebit) {
-                    month.debit += amount;
-                } else {
-                    month.credit += amount;
-                }
+                if (isDebit) month.debit += amt;
+                else month.credit += amt;
             }
 
-            // This year
             if (created >= yearStart && created < nextYearStart) {
-                if (isDebit) {
-                    year.debit += amount;
-                } else {
-                    year.credit += amount;
-                }
+                if (isDebit) year.debit += amt;
+                else year.credit += amt;
             }
         });
 
@@ -1451,42 +1380,66 @@ document.addEventListener("DOMContentLoaded", () => {
         const yearNet = year.credit - year.debit;
         const overallNet = overall.credit - overall.debit;
 
-        function formatAmount(value) {
-            return `Rs ${value.toFixed(2)}`;
-        }
+        const fmt = (v) => `Rs ${v.toFixed(2)}`;
 
-        if (todayDebitEl) todayDebitEl.textContent = formatAmount(today.debit);
-        if (todayCreditEl) todayCreditEl.textContent = formatAmount(today.credit);
-        if (todayNetEl) todayNetEl.textContent = formatAmount(todayNet);
+        if (todayDebitEl) todayDebitEl.textContent = fmt(today.debit);
+        if (todayCreditEl) todayCreditEl.textContent = fmt(today.credit);
+        if (todayNetEl) todayNetEl.textContent = fmt(todayNet);
 
-        if (weekDebitEl) weekDebitEl.textContent = formatAmount(week.debit);
-        if (weekCreditEl) weekCreditEl.textContent = formatAmount(week.credit);
-        if (weekNetEl) weekNetEl.textContent = formatAmount(weekNet);
+        if (weekDebitEl) weekDebitEl.textContent = fmt(week.debit);
+        if (weekCreditEl) weekCreditEl.textContent = fmt(week.credit);
+        if (weekNetEl) weekNetEl.textContent = fmt(weekNet);
 
-        if (monthDebitEl) monthDebitEl.textContent = formatAmount(month.debit);
-        if (monthCreditEl) monthCreditEl.textContent = formatAmount(month.credit);
-        if (monthNetEl) monthNetEl.textContent = formatAmount(monthNet);
+        if (monthDebitEl) monthDebitEl.textContent = fmt(month.debit);
+        if (monthCreditEl) monthCreditEl.textContent = fmt(month.credit);
+        if (monthNetEl) monthNetEl.textContent = fmt(monthNet);
 
-        if (yearDebitEl) yearDebitEl.textContent = formatAmount(year.debit);
-        if (yearCreditEl) yearCreditEl.textContent = formatAmount(year.credit);
-        if (yearNetEl) yearNetEl.textContent = formatAmount(yearNet);
+        if (yearDebitEl) yearDebitEl.textContent = fmt(year.debit);
+        if (yearCreditEl) yearCreditEl.textContent = fmt(year.credit);
+        if (yearNetEl) yearNetEl.textContent = fmt(yearNet);
 
-        if (overallDebitEl) overallDebitEl.textContent = formatAmount(overall.debit);
-        if (overallCreditEl)
-            overallCreditEl.textContent = formatAmount(overall.credit);
-        if (overallNetEl) overallNetEl.textContent = formatAmount(overallNet);
+        if (overallDebitEl) overallDebitEl.textContent = fmt(overall.debit);
+        if (overallCreditEl) overallCreditEl.textContent = fmt(overall.credit);
+        if (overallNetEl) overallNetEl.textContent = fmt(overallNet);
 
-                if (profileTotalTransactionsEl) {
+        if (profileTotalTransactionsEl) {
             profileTotalTransactionsEl.textContent = String(transactions.length);
         }
         if (profileMonthDebitEl) {
-            profileMonthDebitEl.textContent = formatAmount(month.debit);
+            profileMonthDebitEl.textContent = fmt(month.debit);
         }
         if (profileMonthCreditEl) {
-            profileMonthCreditEl.textContent = formatAmount(month.credit);
+            profileMonthCreditEl.textContent = fmt(month.credit);
         }
         if (profileMonthNetEl) {
-            profileMonthNetEl.textContent = formatAmount(monthNet);
+            profileMonthNetEl.textContent = fmt(monthNet);
+        }
+
+        const activity = computeActivityStats();
+        if (profileLastActivityEl) {
+            if (activity.lastActivity) {
+                profileLastActivityEl.textContent =
+                    activity.lastActivity.toLocaleDateString(undefined, {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric"
+                    });
+            } else {
+                profileLastActivityEl.textContent = "—";
+            }
+        }
+        if (profileActiveDays30El) {
+            profileActiveDays30El.textContent = String(
+                activity.activeDaysLast30
+            );
+        }
+        if (profileCurrentStreakEl) {
+            profileCurrentStreakEl.textContent = String(
+                activity.currentStreak
+            );
+        }
+        if (profileBestStreakEl) {
+            profileBestStreakEl.textContent = String(activity.bestStreak);
         }
 
         updateSavingGoalUI(monthNet);
@@ -1496,40 +1449,176 @@ document.addEventListener("DOMContentLoaded", () => {
         updateRangeSummary();
     }
 
-    // === Edit mode helpers ===
+    // === Nav & help ===
 
-    function enterEditMode(transaction) {
-        editingTransactionId = transaction.id;
-
-        amountInput.value = transaction.amount.toString();
-        typeInput.value = transaction.type;
-        categoryInput.value = transaction.category;
-
-        if (submitButton) submitButton.textContent = "Save Changes";
-        if (cancelEditButton) cancelEditButton.style.display = "inline-block";
-        if (editingHint) editingHint.style.display = "block";
-        if (noteInput) noteInput.value = transaction.note || "";
-
-        if (formError) formError.textContent = "";
+    function scrollToSection(id) {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    function exitEditMode() {
-        editingTransactionId = null;
+    navButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const targetId = btn.getAttribute("data-scroll-target");
+            if (targetId) scrollToSection(targetId);
+        });
+    });
 
-        if (submitButton) submitButton.textContent = "Add Transaction";
-        if (cancelEditButton) cancelEditButton.style.display = "none";
-        if (editingHint) editingHint.style.display = "none";
-        if (formError) formError.textContent = "";
+    if (helpButton && helpModal && helpModalClose) {
+        helpButton.addEventListener("click", () => {
+            helpModal.style.display = "flex";
+        });
+        helpModal.addEventListener("click", (e) => {
+            if (e.target === helpModal) {
+                helpModal.style.display = "none";
+            }
+        });
+        helpModalClose.addEventListener("click", () => {
+            helpModal.style.display = "none";
+        });
     }
 
-    // === Rendering transactions (with type/category + range filters) ===
+    if (appTitleEl && helpModal) {
+        appTitleEl.style.cursor = "pointer";
+        appTitleEl.addEventListener("click", () => {
+            helpModal.style.display = "flex";
+        });
+    }
+
+    // Avatar modal
+    if (changeAvatarButton && avatarModal && avatarPreviewEl) {
+        changeAvatarButton.addEventListener("click", () => {
+            pendingAvatarDataUrl = null;
+            if (avatarErrorEl) avatarErrorEl.textContent = "";
+            setAvatarPreviewFromCurrentUser();
+            avatarModal.style.display = "flex";
+        });
+    }
+
+    if (avatarCancelButton && avatarModal) {
+        avatarCancelButton.addEventListener("click", () => {
+            avatarModal.style.display = "none";
+        });
+    }
+
+    if (avatarModal) {
+        avatarModal.addEventListener("click", (e) => {
+            if (e.target === avatarModal) {
+                avatarModal.style.display = "none";
+            }
+        });
+    }
+
+    if (avatarFileInput) {
+        avatarFileInput.addEventListener("change", () => {
+            if (avatarErrorEl) avatarErrorEl.textContent = "";
+            const file = avatarFileInput.files && avatarFileInput.files[0];
+            if (!file) return;
+            if (file.size > 200 * 1024) {
+                if (avatarErrorEl) {
+                    avatarErrorEl.textContent =
+                        "File is too large. Please select an image under 200 KB.";
+                }
+                avatarFileInput.value = "";
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+                if (typeof reader.result === "string") {
+                    pendingAvatarDataUrl = reader.result;
+                    setAvatarPreviewFromDataUrl(pendingAvatarDataUrl);
+                }
+            };
+            reader.onerror = () => {
+                if (avatarErrorEl) {
+                    avatarErrorEl.textContent =
+                        "Failed to read file. Please try again.";
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    if (avatarSaveButton) {
+        avatarSaveButton.addEventListener("click", async () => {
+            if (avatarErrorEl) avatarErrorEl.textContent = "";
+            if (!currentUser) {
+                if (avatarErrorEl) {
+                    avatarErrorEl.textContent = "You must be logged in.";
+                }
+                return;
+            }
+            if (!pendingAvatarDataUrl) {
+                if (avatarErrorEl) {
+                    avatarErrorEl.textContent =
+                        "Please choose an image or click Remove avatar.";
+                }
+                return;
+            }
+            try {
+                const data = await saveAvatarOnServer(pendingAvatarDataUrl);
+                currentUser.avatar = data.avatar || null;
+                saveAuthToStorage();
+                updateAuthUI();
+                avatarModal.style.display = "none";
+                avatarFileInput.value = "";
+                showToast("Avatar updated.", "success");
+            } catch (e) {
+                console.error(e);
+                if (e.status === 401) {
+                    if (avatarErrorEl) {
+                        avatarErrorEl.textContent =
+                            "Your session has expired. Please log in again.";
+                    }
+                    clearAuthState();
+                } else if (avatarErrorEl) {
+                    avatarErrorEl.textContent =
+                        "Failed to save avatar. Please try again.";
+                }
+            }
+        });
+    }
+
+    if (avatarRemoveButton) {
+        avatarRemoveButton.addEventListener("click", async () => {
+            if (avatarErrorEl) avatarErrorEl.textContent = "";
+            if (!currentUser) {
+                if (avatarErrorEl) {
+                    avatarErrorEl.textContent = "You must be logged in.";
+                }
+                return;
+            }
+            try {
+                const data = await saveAvatarOnServer(null);
+                currentUser.avatar = data.avatar || null;
+                saveAuthToStorage();
+                updateAuthUI();
+                avatarModal.style.display = "none";
+                avatarFileInput.value = "";
+                showToast("Avatar removed.", "success");
+            } catch (e) {
+                console.error(e);
+                if (e.status === 401) {
+                    if (avatarErrorEl) {
+                        avatarErrorEl.textContent =
+                            "Your session has expired. Please log in again.";
+                    }
+                    clearAuthState();
+                } else if (avatarErrorEl) {
+                    avatarErrorEl.textContent =
+                        "Failed to remove avatar. Please try again.";
+                }
+            }
+        });
+    }
+
+    // === Transactions rendering & edit ===
 
     function renderTransactions() {
         if (!transactionList) return;
 
         transactionList.innerHTML = "";
 
-        if (transactions.length === 0) {
+        if (!transactions.length) {
             if (noTransactionsText) noTransactionsText.style.display = "block";
             if (noTransactionsFilteredText)
                 noTransactionsFilteredText.style.display = "none";
@@ -1539,24 +1628,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const filtered = transactions.filter((tx) => {
-            if (filters.type !== "all" && tx.type !== filters.type) {
-                return false;
-            }
+            if (filters.type !== "all" && tx.type !== filters.type) return false;
             if (filters.category) {
                 const cat = (tx.category || "").toLowerCase();
                 if (!cat.includes(filters.category)) return false;
             }
-
             if (currentRange.from || currentRange.to) {
                 const created = new Date(tx.createdAt);
                 if (isNaN(created.getTime())) return false;
                 if (!isInRange(created, currentRange)) return false;
             }
-
             return true;
         });
 
-        if (filtered.length === 0) {
+        if (!filtered.length) {
             if (noTransactionsFilteredText)
                 noTransactionsFilteredText.style.display = "block";
             return;
@@ -1577,7 +1662,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const amountFormatted = tx.amount.toFixed(2);
             const dateTime = new Date(tx.createdAt).toLocaleString();
 
-                        li.innerHTML = `
+            li.innerHTML = `
                 <div class="transaction-main">
                     <span class="transaction-category">${tx.category}</span>
                     <span class="transaction-amount ${
@@ -1598,80 +1683,86 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="transaction-time">${dateTime}</span>
                     <button class="edit-button" data-id="${
                         tx.id
-                    }" aria-label="Edit transaction">Edit</button>
+                    }">Edit</button>
                     <button class="delete-button" data-id="${
                         tx.id
-                    }" aria-label="Delete transaction">Delete</button>
+                    }">Delete</button>
                 </div>
             `;
-
             transactionList.appendChild(li);
         });
     }
 
-    // === Click handler for edit/delete transaction buttons ===
+    function enterEditMode(tx) {
+        editingTransactionId = tx.id;
+        amountInput.value = tx.amount.toString();
+        typeInput.value = tx.type;
+        categoryInput.value = tx.category;
+        if (noteInput) noteInput.value = tx.note || "";
+        if (submitButton) submitButton.textContent = "Save Changes";
+        if (cancelEditButton) cancelEditButton.style.display = "inline-block";
+        if (editingHint) editingHint.style.display = "block";
+        formError.textContent = "";
+    }
+
+    function exitEditMode() {
+        editingTransactionId = null;
+        if (submitButton) submitButton.textContent = "Add Transaction";
+        if (cancelEditButton) cancelEditButton.style.display = "none";
+        if (editingHint) editingHint.style.display = "none";
+        if (formError) formError.textContent = "";
+        if (noteInput) noteInput.value = "";
+    }
 
     if (transactionList) {
-        transactionList.addEventListener("click", async (event) => {
-            const target = event.target;
+        transactionList.addEventListener("click", async (e) => {
+            const target = e.target;
             if (!(target instanceof HTMLElement)) return;
 
-            // Delete transaction
             if (target.classList.contains("delete-button")) {
                 const idStr = target.getAttribute("data-id");
                 if (!idStr) return;
                 const id = Number(idStr);
-
-                const confirmed = window.confirm("Delete this transaction?");
-                if (!confirmed) return;
-
+                if (!window.confirm("Delete this transaction?")) return;
                 try {
                     await deleteTransactionOnServer(id);
-                    const index = transactions.findIndex((tx) => tx.id === id);
-                    if (index !== -1) {
-                        transactions.splice(index, 1);
-                    }
+                    const idx = transactions.findIndex((t) => t.id === id);
+                    if (idx !== -1) transactions.splice(idx, 1);
                     renderTransactions();
                     updateSummaries();
-                           } catch (error) {
-                console.error(error);
-                if (error.status === 401) {
-                    showToast(
-                        "Your session has expired. Please log in again.",
-                        "error"
-                    );
-                    clearAuthState();
-                } else {
-                    showToast(
-                        "Failed to delete transaction from server.",
-                        "error"
-                    );
+                } catch (err) {
+                    console.error(err);
+                    if (err.status === 401) {
+                        showToast(
+                            "Your session has expired. Please log in again.",
+                            "error"
+                        );
+                        clearAuthState();
+                    } else {
+                        showToast(
+                            "Failed to delete transaction from server.",
+                            "error"
+                        );
+                    }
                 }
-            }
                 return;
             }
 
-            // Edit
             if (target.classList.contains("edit-button")) {
                 const idStr = target.getAttribute("data-id");
                 if (!idStr) return;
                 const id = Number(idStr);
-
                 const tx = transactions.find((t) => t.id === id);
                 if (!tx) return;
-
                 enterEditMode(tx);
                 amountInput.focus();
             }
         });
     }
 
-    // === Transaction form handler (add or edit) ===
-
     if (form) {
-        form.addEventListener("submit", async (event) => {
-            event.preventDefault();
-
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
             formError.textContent = "";
 
             const amountValue = parseFloat(amountInput.value);
@@ -1683,7 +1774,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 formError.textContent = "Please enter a valid positive amount.";
                 return;
             }
-
             if (!categoryValue) {
                 formError.textContent =
                     "Please enter a category (e.g. Food, Petrol).";
@@ -1691,7 +1781,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             try {
-                               if (editingTransactionId === null) {
+                if (editingTransactionId === null) {
                     const created = await createTransactionOnServer(
                         amountValue,
                         typeValue,
@@ -1699,6 +1789,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         noteValue
                     );
                     transactions.push(created);
+                    showToast("Transaction added.", "success");
                 } else {
                     const updated = await updateTransactionOnServer(
                         editingTransactionId,
@@ -1709,28 +1800,21 @@ document.addEventListener("DOMContentLoaded", () => {
                             note: noteValue
                         }
                     );
-                    const index = transactions.findIndex(
+                    const idx = transactions.findIndex(
                         (t) => t.id === editingTransactionId
                     );
-                    if (index !== -1) {
-                        transactions[index] = updated;
-                    }
+                    if (idx !== -1) transactions[idx] = updated;
+                    showToast("Transaction updated.", "success");
                 }
 
                 renderTransactions();
                 updateSummaries();
- showToast(
-                    editingTransactionId === null
-                        ? "Transaction added."
-                        : "Transaction updated.",
-                    "success"
-                );
                 form.reset();
                 exitEditMode();
                 amountInput.focus();
-            } catch (error) {
-                console.error(error);
-                if (error.status === 401) {
+            } catch (err) {
+                console.error(err);
+                if (err.status === 401) {
                     formError.textContent =
                         "Your session has expired. Please log in again.";
                     clearAuthState();
@@ -1742,8 +1826,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // === Cancel edit button ===
-
     if (cancelEditButton) {
         cancelEditButton.addEventListener("click", () => {
             form.reset();
@@ -1752,7 +1834,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // === Type/Category filters ===
+    // === Filters ===
 
     if (filterTypeSelect) {
         filterTypeSelect.value = filters.type;
@@ -1764,7 +1846,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (filterCategoryInput) {
         filterCategoryInput.addEventListener("input", () => {
-            filters.category = filterCategoryInput.value.trim().toLowerCase();
+            filters.category = filterCategoryInput.value
+                .trim()
+                .toLowerCase();
             renderTransactions();
         });
     }
@@ -1779,30 +1863,21 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // === CSV download ===
-
     if (downloadCsvButton) {
         downloadCsvButton.addEventListener("click", async () => {
             if (!authToken) {
-                alert("Please log in first.");
+                showToast("Please log in first.", "error");
                 return;
             }
-
             try {
-                const response = await fetch(
+                const resp = await fetch(
                     `${API_BASE_URL}/api/transactions/export/csv`,
                     {
-                        headers: {
-                            Authorization: `Bearer ${authToken}`
-                        }
+                        headers: { Authorization: `Bearer ${authToken}` }
                     }
                 );
-
-                if (!response.ok) {
-                    throw new Error("Failed to download CSV");
-                }
-
-                const blob = await response.blob();
+                if (!resp.ok) throw new Error("Failed to download CSV");
+                const blob = await resp.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;
@@ -1811,24 +1886,49 @@ document.addEventListener("DOMContentLoaded", () => {
                 a.click();
                 a.remove();
                 window.URL.revokeObjectURL(url);
-                      } catch (error) {
-                console.error(error);
+                showToast("CSV downloaded.", "success");
+            } catch (err) {
+                console.error(err);
                 showToast("Failed to download CSV.", "error");
             }
         });
     }
 
-    // === Saving goal form handler ===
+    if (downloadJsonButton) {
+        downloadJsonButton.addEventListener("click", () => {
+            if (!authToken) {
+                showToast("Please log in first.", "error");
+                return;
+            }
+            downloadJsonBackup();
+        });
+    }
+
+    if (importJsonButton && jsonImportInput) {
+        importJsonButton.addEventListener("click", () => {
+            if (!authToken) {
+                showToast("Please log in first.", "error");
+                return;
+            }
+            jsonImportInput.click();
+        });
+
+        jsonImportInput.addEventListener("change", () => {
+            const file =
+                jsonImportInput.files && jsonImportInput.files[0];
+            if (file) importJsonBackupFromFile(file);
+        });
+    }
+
+    // === Saving goal form ===
 
     if (savingGoalForm) {
-        savingGoalForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
+        savingGoalForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
             if (savingGoalError) savingGoalError.textContent = "";
-
             if (!savingGoalInput) return;
 
             const rawValue = parseFloat(savingGoalInput.value);
-
             if (isNaN(rawValue) || rawValue < 0) {
                 if (savingGoalError) {
                     savingGoalError.textContent =
@@ -1843,9 +1943,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 await saveSavingGoalToServer(newGoal);
                 syncSavingGoalInput();
                 updateSummaries();
-            } catch (error) {
-                console.error(error);
-                if (error.status === 401) {
+                showToast("Saving goal updated.", "success");
+            } catch (err) {
+                console.error(err);
+                if (err.status === 401) {
                     if (savingGoalError) {
                         savingGoalError.textContent =
                             "Your session has expired. Please log in again.";
@@ -1859,11 +1960,11 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // === Category budget form handler ===
+    // === Budgets ===
 
     if (categoryBudgetForm) {
-        categoryBudgetForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
+        categoryBudgetForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
             if (budgetErrorEl) budgetErrorEl.textContent = "";
 
             const categoryRaw = budgetCategoryInput.value.trim();
@@ -1876,7 +1977,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 return;
             }
-
             if (isNaN(budgetRaw) || budgetRaw <= 0) {
                 if (budgetErrorEl) {
                     budgetErrorEl.textContent =
@@ -1890,7 +1990,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     categoryRaw,
                     budgetRaw
                 );
-
                 const idx = categoryBudgets.findIndex(
                     (b) =>
                         b.category.toLowerCase() ===
@@ -1905,17 +2004,14 @@ document.addEventListener("DOMContentLoaded", () => {
                         monthlyBudget: saved.monthlyBudget
                     });
                 }
-
                 budgetCategoryInput.value = "";
                 budgetAmountInput.value = "";
                 renderCategoryBudgetsTable();
                 updateSummaries();
-                 showToast("Budget saved.", "success");
-                   showToast("Budget deleted.", "success");
-            
-            } catch (error) {
-                console.error(error);
-                if (error.status === 401) {
+                showToast("Budget saved.", "success");
+            } catch (err) {
+                console.error(err);
+                if (err.status === 401) {
                     if (budgetErrorEl) {
                         budgetErrorEl.textContent =
                             "Your session has expired. Please log in again.";
@@ -1929,35 +2025,29 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // === Delete budget buttons (event delegation) ===
-
     if (categoryBudgetsBody) {
-        categoryBudgetsBody.addEventListener("click", async (event) => {
-            const target = event.target;
+        categoryBudgetsBody.addEventListener("click", async (e) => {
+            const target = e.target;
             if (!(target instanceof HTMLElement)) return;
             if (!target.classList.contains("delete-budget-button")) return;
 
             const category = target.getAttribute("data-category");
             if (!category) return;
 
-            const confirmed = window.confirm(
-                `Delete budget for category "${category}"?`
-            );
-            if (!confirmed) return;
+            if (!window.confirm(`Delete budget for "${category}"?`)) return;
 
             try {
                 await deleteCategoryBudgetOnServer(category);
                 const idx = categoryBudgets.findIndex(
                     (b) => b.category === category
                 );
-                if (idx !== -1) {
-                    categoryBudgets.splice(idx, 1);
-                }
+                if (idx !== -1) categoryBudgets.splice(idx, 1);
                 renderCategoryBudgetsTable();
                 updateSummaries();
-                      } catch (error) {
-                console.error(error);
-                if (error.status === 401) {
+                showToast("Budget deleted.", "success");
+            } catch (err) {
+                console.error(err);
+                if (err.status === 401) {
                     showToast(
                         "Your session has expired. Please log in again.",
                         "error"
@@ -1970,12 +2060,11 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // === Date range filter handlers ===
+    // === Date range UI events ===
 
     if (rangePresetSelect) {
         rangePresetSelect.addEventListener("change", () => {
             const v = rangePresetSelect.value;
-
             if (v === "none") {
                 clearRangeInternal(false);
                 return;
@@ -2007,7 +2096,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 from = new Date(today);
                 from.setDate(from.getDate() - 29);
             } else if (v === "custom") {
-                // wait for Apply
                 return;
             }
 
@@ -2023,12 +2111,10 @@ document.addEventListener("DOMContentLoaded", () => {
         rangeApplyButton.addEventListener("click", () => {
             const from = parseDateInput(rangeFromInput.value);
             const to = parseDateInput(rangeToInput.value);
-
             if (from && to && from > to) {
-                alert("From date cannot be after To date.");
+                window.alert("From date cannot be after To date.");
                 return;
             }
-
             setRange(from, to, true);
         });
     }
@@ -2039,9 +2125,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // === Auth event handlers ===
+    // === Auth UI events (login/register/logout) ===
 
-    // Switch to register form
     if (showRegisterButton) {
         showRegisterButton.addEventListener("click", () => {
             if (loginForm) loginForm.style.display = "none";
@@ -2051,7 +2136,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Switch to login form
     if (showLoginButton) {
         showLoginButton.addEventListener("click", () => {
             if (registerForm) registerForm.style.display = "none";
@@ -2061,10 +2145,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Handle login
     if (loginForm) {
-        loginForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
+        loginForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
             if (loginErrorEl) loginErrorEl.textContent = "";
 
             const username = loginUsernameInput.value.trim();
@@ -2079,7 +2162,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             try {
-                const response = await fetch(
+                const resp = await fetch(
                     `${API_BASE_URL}/api/auth/login`,
                     {
                         method: "POST",
@@ -2087,10 +2170,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         body: JSON.stringify({ username, password })
                     }
                 );
+                const data = await resp.json().catch(() => null);
 
-                const data = await response.json().catch(() => null);
-
-                if (!response.ok) {
+                if (!resp.ok) {
                     const msg =
                         data && data.error
                             ? data.error
@@ -2105,21 +2187,17 @@ document.addEventListener("DOMContentLoaded", () => {
                     await loadTransactionsFromServer();
                     await loadSavingGoalFromServer();
                     await loadCategoryBudgetsFromServer();
-                } catch (error) {
-                    console.error(
-                        "Error loading data after login:",
-                        error
-                    );
+                } catch (err) {
+                    console.error("Error loading data after login:", err);
                 }
 
-                               syncSavingGoalInput();
+                syncSavingGoalInput();
+                renderTransactions();
                 updateSummaries();
-                showToast("Saving goal updated.", "success");
-
                 loginForm.reset();
                 if (registerForm) registerForm.reset();
-            } catch (error) {
-                console.error(error);
+            } catch (err) {
+                console.error(err);
                 if (loginErrorEl) {
                     loginErrorEl.textContent =
                         "Network error while logging in. Please try again.";
@@ -2128,10 +2206,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Handle register
     if (registerForm) {
-        registerForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
+        registerForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
             if (registerErrorEl) registerErrorEl.textContent = "";
 
             const username = registerUsernameInput.value.trim();
@@ -2145,14 +2222,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 return;
             }
-
             if (password !== password2) {
                 if (registerErrorEl) {
-                    registerErrorEl.textContent = "Passwords do not match.";
+                    registerErrorEl.textContent =
+                        "Passwords do not match.";
                 }
                 return;
             }
-
             if (password.length < 6) {
                 if (registerErrorEl) {
                     registerErrorEl.textContent =
@@ -2162,7 +2238,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             try {
-                const response = await fetch(
+                const resp = await fetch(
                     `${API_BASE_URL}/api/auth/register`,
                     {
                         method: "POST",
@@ -2170,10 +2246,9 @@ document.addEventListener("DOMContentLoaded", () => {
                         body: JSON.stringify({ username, password })
                     }
                 );
+                const data = await resp.json().catch(() => null);
 
-                const data = await response.json().catch(() => null);
-
-                if (!response.ok) {
+                if (!resp.ok) {
                     const msg =
                         data && data.error
                             ? data.error
@@ -2188,21 +2263,20 @@ document.addEventListener("DOMContentLoaded", () => {
                     await loadTransactionsFromServer();
                     await loadSavingGoalFromServer();
                     await loadCategoryBudgetsFromServer();
-                } catch (error) {
+                } catch (err) {
                     console.error(
                         "Error loading data after register:",
-                        error
+                        err
                     );
                 }
 
                 syncSavingGoalInput();
                 renderTransactions();
                 updateSummaries();
-
                 registerForm.reset();
                 if (loginForm) loginForm.reset();
-            } catch (error) {
-                console.error(error);
+            } catch (err) {
+                console.error(err);
                 if (registerErrorEl) {
                     registerErrorEl.textContent =
                         "Network error while registering. Please try again.";
@@ -2211,7 +2285,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Logout
     if (logoutButton) {
         logoutButton.addEventListener("click", () => {
             clearAuthState();
@@ -2220,34 +2293,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // === Initial load ===
 
-       async function init() {
-        loadTheme();            // 0) Theme
-        loadAuthFromStorage();  // 1) Auth
+    async function init() {
+        loadTheme();
+        loadAuthFromStorage();
         updateAuthUI();
 
         showGlobalLoading();
         try {
-            // 2) If we have a token, verify it and load this user's data
             if (authToken && currentUser) {
                 try {
-                    const me = await fetchJson(`${API_BASE_URL}/api/auth/me`);
+                    const me = await fetchJson(
+                        `${API_BASE_URL}/api/auth/me`
+                    );
                     currentUser = me.user;
                     saveAuthToStorage();
-
                     await loadTransactionsFromServer();
                     await loadSavingGoalFromServer();
                     await loadCategoryBudgetsFromServer();
-                } catch (error) {
-                    console.error("Auto-login failed:", error);
+                } catch (err) {
+                    console.error("Auto-login failed:", err);
                     clearAuthState();
                 }
             } else {
                 savingGoalAmount = null;
                 categoryBudgets.length = 0;
             }
-
             syncSavingGoalInput();
-
             renderTransactions();
             updateSummaries();
         } finally {
@@ -2255,5 +2326,5 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-        init();
-    });
+    init();
+});

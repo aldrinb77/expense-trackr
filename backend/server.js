@@ -1,5 +1,5 @@
-// Expense Tracker backend - SQLite + JWT auth + per-user transactions
-// + per-user saving goals + per-user category budgets + avatars + static frontend (optional)
+// Expense Tracker backend - SQLite + JWT auth + per-user data
+// Features: avatars, notes, saving goals, category budgets, CSV+JSON export/import
 
 const express = require("express");
 const cors = require("cors");
@@ -10,14 +10,13 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const app = express();
-// Use environment PORT if provided (for deployment), otherwise 4000 locally
 const PORT = process.env.PORT || 4000;
 
-// --- Express middleware ---
+// --- Middleware ---
 
 app.use(express.json());
 
-// CORS: allow only Netlify frontend + local tools / file://
+// CORS: allow only Netlify + tools without origin (curl/file://)
 const allowedOrigins = [
     "https://gleeful-sunburst-10409b.netlify.app"
 ];
@@ -25,7 +24,6 @@ const allowedOrigins = [
 app.use(
     cors({
         origin: (origin, callback) => {
-            // Allow requests with no origin (mobile apps, curl, file://)
             if (!origin || origin === "null") {
                 return callback(null, true);
             }
@@ -38,12 +36,11 @@ app.use(
     })
 );
 
-// Serve static frontend files from /public (optional)
+// Static (optional, not used by your current frontend)
 const PUBLIC_DIR = path.join(__dirname, "public");
 console.log("Serving static files from:", PUBLIC_DIR);
 app.use(express.static(PUBLIC_DIR));
 
-// Explicit routes for "/", "/index.html" (for when you deploy static files here)
 app.get(["/", "/index.html"], (req, res) => {
     const indexPath = path.join(PUBLIC_DIR, "index.html");
     fs.access(indexPath, fs.constants.F_OK, (err) => {
@@ -59,7 +56,8 @@ app.get(["/", "/index.html"], (req, res) => {
     });
 });
 
-// === JWT configuration ===
+// --- JWT config ---
+
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const JWT_EXPIRES_IN = "7d";
 
@@ -68,12 +66,10 @@ const JWT_EXPIRES_IN = "7d";
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "expense-tracker.db");
 
-// Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Open / create the SQLite database
 const db = new sqlite3.Database(DB_FILE, (err) => {
     if (err) {
         console.error("Failed to open SQLite database:", err);
@@ -83,11 +79,10 @@ const db = new sqlite3.Database(DB_FILE, (err) => {
     }
 });
 
-// Create tables if they don't exist + alter where needed
 db.serialize(() => {
     db.run("PRAGMA foreign_keys = ON");
 
-    // Users table (includes avatar column)
+    // Users table (with avatar)
     db.run(
         `
         CREATE TABLE IF NOT EXISTS users (
@@ -106,17 +101,14 @@ db.serialize(() => {
         }
     );
 
-    // Ensure avatar column exists on existing databases
-    db.run(
-        "ALTER TABLE users ADD COLUMN avatar TEXT",
-        (err) => {
-            if (err && !/duplicate column name/i.test(err.message)) {
-                console.error("Failed to add avatar column:", err);
-            }
+    // Ensure avatar column exists
+    db.run("ALTER TABLE users ADD COLUMN avatar TEXT", (err) => {
+        if (err && !/duplicate column name/i.test(err.message)) {
+            console.error("Failed to add avatar column:", err);
         }
-    );
+    });
 
-    // Transactions table (per user, includes note column)
+    // Transactions (with note)
     db.run(
         `
         CREATE TABLE IF NOT EXISTS transactions (
@@ -138,17 +130,14 @@ db.serialize(() => {
         }
     );
 
-    // Ensure note column exists on existing databases
-    db.run(
-        "ALTER TABLE transactions ADD COLUMN note TEXT",
-        (err) => {
-            if (err && !/duplicate column name/i.test(err.message)) {
-                console.error("Failed to add note column:", err);
-            }
+    // Ensure note column exists
+    db.run("ALTER TABLE transactions ADD COLUMN note TEXT", (err) => {
+        if (err && !/duplicate column name/i.test(err.message)) {
+            console.error("Failed to add note column:", err);
         }
-    );
+    });
 
-    // Saving goals table (per user)
+    // Saving goals
     db.run(
         `
         CREATE TABLE IF NOT EXISTS saving_goals (
@@ -166,7 +155,7 @@ db.serialize(() => {
         }
     );
 
-    // Category budgets table (per user, per category)
+    // Category budgets
     db.run(
         `
         CREATE TABLE IF NOT EXISTS category_budgets (
@@ -187,7 +176,16 @@ db.serialize(() => {
     );
 });
 
-// --- Validation helper (used for POST and PUT of transactions) ---
+// --- DB helpers ---
+
+function runAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.run(sql, params, function (err) {
+            if (err) return reject(err);
+            resolve(this);
+        });
+    });
+}
 
 function validateFullTransaction(body) {
     const errors = [];
@@ -212,10 +210,7 @@ function validateFullTransaction(body) {
     return errors;
 }
 
-// --- JWT / auth helpers ---
-
 function generateToken(user) {
-    // sub = subject (user id)
     const payload = {
         sub: user.id,
         username: user.username,
@@ -247,17 +242,6 @@ function authMiddleware(req, res, next) {
     } catch (err) {
         return res.status(401).json({ error: "Invalid or expired token" });
     }
-}
-
-// --- DB helper functions (Promises) ---
-
-function runAsync(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.run(sql, params, function (err) {
-            if (err) return reject(err);
-            resolve(this);
-        });
-    });
 }
 
 // Users
@@ -309,7 +293,7 @@ function updateUserAvatar(userId, avatar) {
     });
 }
 
-// Transactions (per user, with note)
+// Transactions
 function getAllTransactionsForUser(userId) {
     return new Promise((resolve, reject) => {
         db.all(
@@ -394,7 +378,7 @@ function deleteTransaction(userId, id) {
     });
 }
 
-// Saving goals (per user)
+// Saving goals
 function getSavingGoalForUser(userId) {
     return new Promise((resolve, reject) => {
         db.get(
@@ -439,94 +423,8 @@ function upsertSavingGoalForUser(userId, goal) {
         }
     });
 }
-async function importUserData(userId, data) {
-    const { savingGoal, categoryBudgets, transactions, user } = data || {};
 
-    const txList = Array.isArray(transactions) ? transactions : [];
-    const budgetList = Array.isArray(categoryBudgets) ? categoryBudgets : [];
-
-    try {
-        await runAsync("BEGIN TRANSACTION");
-
-        // Clear existing data
-        await runAsync("DELETE FROM transactions WHERE userId = ?", [userId]);
-        await runAsync("DELETE FROM category_budgets WHERE userId = ?", [userId]);
-        await runAsync("DELETE FROM saving_goals WHERE userId = ?", [userId]);
-
-        // Optional: avatar from backup
-        if (user && typeof user.avatar === "string") {
-            await updateUserAvatar(userId, user.avatar);
-        }
-
-        // Restore saving goal
-        if (savingGoal && typeof savingGoal.monthlyGoal === "number") {
-            await upsertSavingGoalForUser(userId, savingGoal.monthlyGoal);
-        }
-
-        // Restore budgets
-        for (const b of budgetList) {
-            if (
-                b &&
-                typeof b.category === "string" &&
-                typeof b.monthlyBudget === "number"
-            ) {
-                await upsertCategoryBudgetForUser(
-                    userId,
-                    b.category,
-                    b.monthlyBudget
-                );
-            }
-        }
-
-        // Restore transactions (ignore id, use createdAt if present)
-        for (const t of txList) {
-            if (!t) continue;
-            const amount = Number(t.amount);
-            const type = t.type;
-            const category = typeof t.category === "string" ? t.category : "";
-            if (
-                !type ||
-                (type !== "debit" && type !== "credit") ||
-                !category ||
-                Number.isNaN(amount) ||
-                amount <= 0
-            ) {
-                continue;
-            }
-
-            let createdAt = t.createdAt;
-            const note =
-                typeof t.note === "string" && t.note.trim().length > 0
-                    ? t.note.trim()
-                    : null;
-
-            const d = new Date(createdAt);
-            if (!createdAt || Number.isNaN(d.getTime())) {
-                createdAt = new Date().toISOString();
-            }
-
-            await runAsync(
-                "INSERT INTO transactions (userId, amount, type, category, createdAt, note) VALUES (?, ?, ?, ?, ?, ?)",
-                [userId, amount, type, category, createdAt, note]
-            );
-        }
-
-        await runAsync("COMMIT");
-        return {
-            transactions: txList.length,
-            categoryBudgets: budgetList.length,
-            savingGoal: savingGoal && typeof savingGoal.monthlyGoal === "number"
-        };
-    } catch (err) {
-        try {
-            await runAsync("ROLLBACK");
-        } catch (e) {
-            // ignore
-        }
-        throw err;
-    }
-}
-// Category budgets (per user)
+// Category budgets
 function getCategoryBudgetsForUser(userId) {
     return new Promise((resolve, reject) => {
         db.all(
@@ -574,9 +472,91 @@ function deleteCategoryBudgetForUser(userId, category) {
     });
 }
 
+// Import user data from JSON backup
+async function importUserData(userId, data) {
+    const { savingGoal, categoryBudgets, transactions, user } = data || {};
+
+    const txList = Array.isArray(transactions) ? transactions : [];
+    const budgetList = Array.isArray(categoryBudgets) ? categoryBudgets : [];
+
+    try {
+        await runAsync("BEGIN TRANSACTION");
+
+        await runAsync("DELETE FROM transactions WHERE userId = ?", [userId]);
+        await runAsync("DELETE FROM category_budgets WHERE userId = ?", [userId]);
+        await runAsync("DELETE FROM saving_goals WHERE userId = ?", [userId]);
+
+        if (user && typeof user.avatar === "string") {
+            await updateUserAvatar(userId, user.avatar);
+        }
+
+        if (savingGoal && typeof savingGoal.monthlyGoal === "number") {
+            await upsertSavingGoalForUser(userId, savingGoal.monthlyGoal);
+        }
+
+        for (const b of budgetList) {
+            if (
+                b &&
+                typeof b.category === "string" &&
+                typeof b.monthlyBudget === "number"
+            ) {
+                await upsertCategoryBudgetForUser(
+                    userId,
+                    b.category,
+                    b.monthlyBudget
+                );
+            }
+        }
+
+        for (const t of txList) {
+            if (!t) continue;
+            const amount = Number(t.amount);
+            const type = t.type;
+            const category = typeof t.category === "string" ? t.category : "";
+            if (
+                !type ||
+                (type !== "debit" && type !== "credit") ||
+                !category ||
+                Number.isNaN(amount) ||
+                amount <= 0
+            ) {
+                continue;
+            }
+
+            let createdAt = t.createdAt;
+            const note =
+                typeof t.note === "string" && t.note.trim().length > 0
+                    ? t.note.trim()
+                    : null;
+
+            const d = new Date(createdAt);
+            if (!createdAt || Number.isNaN(d.getTime())) {
+                createdAt = new Date().toISOString();
+            }
+
+            await runAsync(
+                "INSERT INTO transactions (userId, amount, type, category, createdAt, note) VALUES (?, ?, ?, ?, ?, ?)",
+                [userId, amount, type, category, createdAt, note]
+            );
+        }
+
+        await runAsync("COMMIT");
+        return {
+            transactions: txList.length,
+            categoryBudgets: budgetList.length,
+            savingGoal: savingGoal && typeof savingGoal.monthlyGoal === "number"
+        };
+    } catch (err) {
+        try {
+            await runAsync("ROLLBACK");
+        } catch (e) {}
+        throw err;
+    }
+}
+
 // --- Routes ---
 
-// Health check
+// Health
 app.get("/api/health", (req, res) => {
     res.json({
         status: "ok",
@@ -584,9 +564,7 @@ app.get("/api/health", (req, res) => {
     });
 });
 
-// === Auth routes ===
-
-// Register new user
+// Auth
 app.post("/api/auth/register", async (req, res) => {
     const { username, password } = req.body || {};
 
@@ -626,7 +604,6 @@ app.post("/api/auth/register", async (req, res) => {
     }
 });
 
-// Login
 app.post("/api/auth/login", async (req, res) => {
     const { username, password } = req.body || {};
 
@@ -669,7 +646,6 @@ app.post("/api/auth/login", async (req, res) => {
     }
 });
 
-// Get current user from token
 app.get("/api/auth/me", authMiddleware, (req, res) => {
     res.json({
         user: {
@@ -681,7 +657,7 @@ app.get("/api/auth/me", authMiddleware, (req, res) => {
     });
 });
 
-// Update avatar for current user
+// Avatar update
 app.put("/api/user/avatar", authMiddleware, async (req, res) => {
     const { avatar } = req.body || {};
 
@@ -707,8 +683,7 @@ app.put("/api/user/avatar", authMiddleware, async (req, res) => {
     }
 });
 
-// === Saving goal routes (per user) ===
-
+// Saving goal
 app.get("/api/saving-goal", authMiddleware, async (req, res) => {
     try {
         const row = await getSavingGoalForUser(req.user.id);
@@ -752,8 +727,7 @@ app.put("/api/saving-goal", authMiddleware, async (req, res) => {
     }
 });
 
-// === Category budgets routes (per user) ===
-
+// Category budgets
 app.get("/api/category-budgets", authMiddleware, async (req, res) => {
     try {
         const rows = await getCategoryBudgetsForUser(req.user.id);
@@ -825,8 +799,7 @@ app.delete(
     }
 );
 
-// === Transaction routes (require auth) ===
-
+// Transactions
 app.get("/api/transactions", authMiddleware, async (req, res) => {
     try {
         const rows = await getAllTransactionsForUser(req.user.id);
@@ -915,7 +888,8 @@ app.delete("/api/transactions/:id", authMiddleware, async (req, res) => {
         res.status(500).json({ error: "Failed to delete transaction" });
     }
 });
-// Export all user data as JSON (for backup)
+
+// JSON export/import
 app.get("/api/export/json", authMiddleware, async (req, res) => {
     try {
         const [txRows, budgetRows, savingRow] = await Promise.all([
@@ -947,7 +921,6 @@ app.get("/api/export/json", authMiddleware, async (req, res) => {
     }
 });
 
-// Import user data from JSON backup (replace current user's data)
 app.post("/api/import/json", authMiddleware, async (req, res) => {
     const data = req.body || {};
 
@@ -967,6 +940,7 @@ app.post("/api/import/json", authMiddleware, async (req, res) => {
     }
 });
 
+// CSV export
 app.get(
     "/api/transactions/export/csv",
     authMiddleware,

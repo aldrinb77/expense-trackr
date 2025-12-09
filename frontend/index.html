@@ -2,10 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Expense Tracker</title>
-    <head>
-    <meta charset="UTF-8">
-    <title>Expense Tracker</title>
+    <title>Expense Trackr</title>
 
     <!-- Font: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,25 +11,19 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
         rel="stylesheet"
     >
-    <link rel="icon" type="image/png" href="favicon.png">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="logo.png">
+
     <link rel="stylesheet" href="style.css">
 
-    <!-- Chart.js library from CDN (for charts) -->
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- Our app logic -->
-    <script src="app.js" defer></script>
-</head>
-    <link rel="stylesheet" href="style.css">
-
-    <!-- Chart.js library from CDN (for charts) -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <!-- Our app logic -->
+    <!-- App logic -->
     <script src="app.js" defer></script>
 </head>
 <body>
-  <body>
     <!-- Toasts + global loading overlay -->
     <div id="toast-container"></div>
     <div id="global-loading" class="loading-overlay" style="display: none;">
@@ -40,17 +31,17 @@
         <p>Loading data...</p>
     </div>
 
-      <header class="app-header">
-               <div class="header-left">
-           <div class="brand">
-    <div class="brand-logo" aria-hidden="true"></div>
-    <div class="brand-text">
-        <h1>EXPENSE TRACKR</h1>
-        <p class="tagline">Simple, minimal tracking of your daily spending</p>
-    </div>
-</div>
+    <header class="app-header">
+        <div class="header-main">
+            <div class="header-left">
+                <div class="brand">
+                    <div class="brand-logo" aria-hidden="true"></div>
+                    <div class="brand-text">
+                        <h1>EXPENSE TRACKR</h1>
+                        <p class="tagline">Simple, minimal tracking of your daily spending</p>
+                    </div>
+                </div>
             </div>
-        </div>
             <div class="header-right">
                 <nav class="top-nav">
                     <button
@@ -101,18 +92,17 @@
     </header>
 
     <main class="app-main">
-        <!-- Account / Auth card -->
+        <!-- Account / Profile -->
         <section class="card" id="auth-card">
             <h2>Account</h2>
 
-            <!-- Visible when NOT logged in -->
+            <!-- Logged out -->
             <div id="auth-logged-out">
                 <p class="muted-text">
                     Log in or create an account to start tracking your expenses.
                     Each account sees only its own data.
                 </p>
 
-                <!-- Login form -->
                 <form id="login-form">
                     <h3>Log In</h3>
                     <div class="form-row">
@@ -148,7 +138,6 @@
                     </div>
                 </form>
 
-                <!-- Register form (hidden by default) -->
                 <form id="register-form" style="display: none; margin-top: 12px;">
                     <h3>Create Account</h3>
                     <div class="form-row">
@@ -194,7 +183,7 @@
                 </form>
             </div>
 
-                       <!-- Visible when logged in -->
+            <!-- Logged in -->
             <div id="auth-logged-in" style="display: none;">
                 <div class="profile-row">
                     <div class="profile-avatar" id="profile-avatar"></div>
@@ -237,7 +226,28 @@
                         <span class="label">Net</span>
                         <span class="value" id="profile-month-net">Rs 0.00</span>
                     </div>
-                                    <div class="profile-actions">
+                </div>
+
+                <div class="profile-stats" id="profile-activity-stats">
+                    <div class="profile-stat">
+                        <span class="label">Last activity</span>
+                        <span class="value" id="profile-last-activity">—</span>
+                    </div>
+                    <div class="profile-stat">
+                        <span class="label">Active days (30d)</span>
+                        <span class="value" id="profile-active-days-30">0</span>
+                    </div>
+                    <div class="profile-stat">
+                        <span class="label">Current streak</span>
+                        <span class="value" id="profile-current-streak">0</span>
+                    </div>
+                    <div class="profile-stat">
+                        <span class="label">Best streak</span>
+                        <span class="value" id="profile-best-streak">0</span>
+                    </div>
+                </div>
+
+                <div class="profile-actions">
                     <button
                         type="button"
                         class="secondary-button small"
@@ -246,17 +256,16 @@
                         Change avatar
                     </button>
                 </div>
-                </div>
             </div>
         </section>
 
-        <!-- Status card (always visible) -->
+        <!-- Status -->
         <section class="card">
             <h2>App Status</h2>
             <p id="status-text">If you can see this text, the app is loaded.</p>
         </section>
 
-        <!-- Add / Edit Transaction card (requires auth) -->
+        <!-- Add Transaction -->
         <section class="card requires-auth" id="add-transaction-card">
             <h2>Add Transaction</h2>
             <form id="transaction-form">
@@ -281,7 +290,7 @@
                     </select>
                 </div>
 
-                                <div class="form-row">
+                <div class="form-row">
                     <label for="category">Category</label>
                     <input
                         type="text"
@@ -290,6 +299,13 @@
                         placeholder="e.g. Food, Petrol"
                         required
                     >
+                </div>
+
+                <div class="quick-categories">
+                    <span class="muted-text">Quick categories:</span>
+                    <div class="quick-category-chips" id="quick-category-chips">
+                        <!-- Chips via JS -->
+                    </div>
                 </div>
 
                 <div class="form-row">
@@ -332,7 +348,51 @@
             </form>
         </section>
 
-        <!-- Summary card (requires auth) -->
+        <!-- Date range filter -->
+        <section class="card requires-auth" id="date-range-card">
+            <h2>Date Range Filter (Optional)</h2>
+            <div class="date-range-controls">
+                <div class="form-row-inline">
+                    <label for="range-preset">Preset</label>
+                    <select id="range-preset">
+                        <option value="none">All time</option>
+                        <option value="today">Today</option>
+                        <option value="thisWeek">This Week</option>
+                        <option value="thisMonth">This Month</option>
+                        <option value="thisYear">This Year</option>
+                        <option value="last30">Last 30 Days</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="form-row-inline">
+                    <label for="range-from">From</label>
+                    <input type="date" id="range-from">
+                </div>
+                <div class="form-row-inline">
+                    <label for="range-to">To</label>
+                    <input type="date" id="range-to">
+                </div>
+                <button
+                    type="button"
+                    class="secondary-button small"
+                    id="range-apply"
+                >
+                    Apply
+                </button>
+                <button
+                    type="button"
+                    class="secondary-button small"
+                    id="range-clear"
+                >
+                    Clear
+                </button>
+            </div>
+            <p id="range-summary-text" class="muted-text" style="margin-top: 6px;">
+                No custom date range selected. Showing all transactions.
+            </p>
+        </section>
+
+        <!-- Summary -->
         <section class="card requires-auth" id="summary-card">
             <h2>Summary</h2>
             <div class="summary-grid">
@@ -370,7 +430,7 @@
             </div>
         </section>
 
-        <!-- Saving goal card (requires auth, per user) -->
+        <!-- Saving goal -->
         <section class="card requires-auth" id="saving-goal-card">
             <h2>Saving Goal (Monthly)</h2>
             <form id="saving-goal-form">
@@ -402,7 +462,7 @@
             </div>
         </section>
 
-        <!-- Charts card (requires auth) -->
+        <!-- Charts -->
         <section class="card requires-auth" id="charts-card">
             <h2>Insights & Charts</h2>
             <div class="charts-grid">
@@ -420,14 +480,27 @@
                         No spending data for the last 7 days.
                     </p>
                 </div>
+                <div class="chart-block">
+                    <h3>Net Cash Flow – Last 90 Days</h3>
+                    <canvas id="net-trend-chart"></canvas>
+                    <p id="net-trend-chart-empty" class="muted-text">
+                        Not enough data for the last 90 days.
+                    </p>
+                </div>
             </div>
         </section>
 
-        <!-- Category totals table (requires auth) -->
+        <!-- Category totals -->
         <section class="card requires-auth" id="category-totals-card">
             <h2>Category Totals (This Month)</h2>
             <p class="muted-text">
                 Only debit (expense) transactions are included.
+            </p>
+            <p
+                id="top-categories-summary"
+                class="muted-text top-categories-summary"
+            >
+                No expenses yet to highlight top categories.
             </p>
             <table class="category-table">
                 <thead>
@@ -438,7 +511,6 @@
                     </tr>
                 </thead>
                 <tbody id="category-totals-body">
-                    <!-- Rows will be inserted by JavaScript -->
                 </tbody>
             </table>
             <p id="category-totals-empty" class="muted-text">
@@ -446,11 +518,67 @@
             </p>
         </section>
 
-        <!-- Transactions list card (requires auth) -->
+        <!-- Category budgets -->
+        <section class="card requires-auth" id="category-budgets-card">
+            <h2>Category Budgets (Monthly)</h2>
+            <form id="category-budget-form">
+                <div class="form-row">
+                    <label for="budget-category">Category</label>
+                    <input
+                        type="text"
+                        id="budget-category"
+                        placeholder="e.g. Food"
+                        required
+                    >
+                </div>
+                <div class="form-row">
+                    <label for="budget-amount">Monthly budget (Rs)</label>
+                    <input
+                        type="number"
+                        id="budget-amount"
+                        min="0.01"
+                        step="0.01"
+                        placeholder="e.g. 5000"
+                        required
+                    >
+                </div>
+                <p id="budget-error" class="form-error"></p>
+                <div class="form-actions">
+                    <button type="submit" class="secondary-button">
+                        Save Budget
+                    </button>
+                </div>
+                <p class="muted-text">
+                    Re‑saving the same category will update its budget.
+                </p>
+            </form>
+
+            <p class="muted-text" style="margin-top: 4px;">
+                Budgets apply to debit (expense) transactions in the current calendar month.
+            </p>
+
+            <table class="category-table" id="category-budgets-table">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Budget (Rs)</th>
+                        <th>Spent (This Month)</th>
+                        <th>Remaining</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="category-budgets-body">
+                </tbody>
+            </table>
+            <p id="category-budgets-empty" class="muted-text">
+                No budgets set yet. Add one above.
+            </p>
+        </section>
+
+        <!-- Transactions -->
         <section class="card requires-auth" id="transactions-card">
             <h2>Transactions</h2>
 
-            <!-- Filters apply to the list below only -->
             <div class="transactions-filters">
                 <div class="form-row-inline">
                     <label for="filter-type">Type</label>
@@ -482,7 +610,28 @@
                 >
                     Download CSV
                 </button>
+                <button
+                    type="button"
+                    class="secondary-button small"
+                    id="download-json"
+                >
+                    Download JSON
+                </button>
+                <button
+                    type="button"
+                    class="secondary-button small"
+                    id="import-json"
+                >
+                    Import JSON
+                </button>
             </div>
+
+            <input
+                type="file"
+                id="json-import-input"
+                accept="application/json"
+                style="display: none;"
+            >
 
             <p id="no-transactions" class="muted-text">
                 No transactions yet. Add your first one above.
@@ -492,26 +641,44 @@
             </p>
 
             <ul id="transaction-list" class="transaction-list">
-                <!-- Transactions will be inserted here by JavaScript -->
             </ul>
         </section>
-                <!-- Help / About modal -->
+
+        <!-- Help / About modal -->
         <div id="help-modal" class="modal-overlay" style="display: none;">
             <div class="modal-content" role="dialog" aria-labelledby="help-modal-title">
-                <h2 id="help-modal-title">About this app</h2>
+                <h2 id="help-modal-title">About Expense Trackr</h2>
                 <p>
-                    This Expense Tracker helps you quickly log debits (expenses) and credits (income),
-                    see summaries, and keep an eye on your budgets and saving goals.
+                    Expense Trackr is a simple personal finance dashboard. Enter your
+                    debits (expenses) and credits (income) in seconds, then see where
+                    your money goes, how much you’ve saved, and whether you’re staying
+                    within your monthly budgets.
                 </p>
                 <ul>
-                    <li><strong>Account</strong> – Log in or create an account. Each account has its own data.</li>
-                    <li><strong>Dashboard</strong> – Date range filter + daily / weekly / monthly / yearly summaries.</li>
-                    <li><strong>Budgets</strong> – Monthly saving goal and per-category budgets with progress.</li>
-                    <li><strong>Charts</strong> – Category breakdown, last 7 days spending, and 90‑day net cash flow.</li>
-                    <li><strong>Transactions</strong> – Full list with filters, edit/delete, and CSV export.</li>
+                    <li>
+                        <strong>Quick entry</strong> – Add a transaction with amount,
+                        type, and category. The time is recorded automatically.
+                    </li>
+                    <li>
+                        <strong>Summaries</strong> – View today, this week, this month,
+                        and this year at a glance.
+                    </li>
+                    <li>
+                        <strong>Budgets & goals</strong> – Set a monthly saving goal and
+                        per‑category budgets with progress bars.
+                    </li>
+                    <li>
+                        <strong>Charts</strong> – Visualize your spending by category,
+                        daily debits, and 90‑day net cash flow.
+                    </li>
+                    <li>
+                        <strong>Export & backup</strong> – Download your data as CSV or
+                        full JSON backup for restore later.
+                    </li>
                 </ul>
                 <p class="muted-text">
-                    Tip: use the date range filter and dark mode toggle in the header to customize the view.
+                    Tip: use the date range filter, quick category chips, and dark mode
+                    toggle in the header to customize your view.
                 </p>
                 <div class="modal-actions">
                     <button
@@ -524,12 +691,13 @@
                 </div>
             </div>
         </div>
-                <!-- Avatar modal -->
+
+        <!-- Avatar modal -->
         <div id="avatar-modal" class="modal-overlay" style="display: none;">
             <div class="modal-content avatar-modal" role="dialog" aria-labelledby="avatar-modal-title">
                 <h2 id="avatar-modal-title">Change avatar</h2>
                 <div class="avatar-modal-body">
-                    <div class="avatar-preview" id="avatar-preview"></div>
+                    <div class="avatar-preview" id="avatar-preview">?</div>
                     <div class="avatar-input">
                         <label class="muted-text" for="avatar-file-input">
                             Upload a square image (max ~200 KB). It will be shown as your profile picture.
