@@ -1,5 +1,5 @@
 // Expense Tracker backend - SQLite + JWT auth + per-user transactions
-// + per-user saving goals + per-user category budgets + static frontend (optional)
+// + per-user saving goals + per-user category budgets + avatars + static frontend (optional)
 
 const express = require("express");
 const cors = require("cors");
@@ -38,8 +38,7 @@ app.use(
     })
 );
 
-// Serve static frontend files from /public (optional; you are currently
-// opening index.html directly, but this is harmless and useful later)
+// Serve static frontend files from /public (optional)
 const PUBLIC_DIR = path.join(__dirname, "public");
 console.log("Serving static files from:", PUBLIC_DIR);
 app.use(express.static(PUBLIC_DIR));
@@ -61,8 +60,6 @@ app.get(["/", "/index.html"], (req, res) => {
 });
 
 // === JWT configuration ===
-// IMPORTANT: in production we use process.env.JWT_SECRET (set on Render).
-// The fallback string is only for local development.
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const JWT_EXPIRES_IN = "7d";
 
@@ -86,19 +83,19 @@ const db = new sqlite3.Database(DB_FILE, (err) => {
     }
 });
 
-// Create tables if they don't exist
+// Create tables if they don't exist + alter where needed
 db.serialize(() => {
-    // Enable foreign keys
     db.run("PRAGMA foreign_keys = ON");
 
-    // Users table
+    // Users table (includes avatar column)
     db.run(
         `
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
             passwordHash TEXT NOT NULL,
-            createdAt TEXT NOT NULL
+            createdAt TEXT NOT NULL,
+            avatar TEXT
         )
         `,
         (err) => {
@@ -109,7 +106,17 @@ db.serialize(() => {
         }
     );
 
-    // Transactions table (per user)
+    // Ensure avatar column exists on existing databases
+    db.run(
+        "ALTER TABLE users ADD COLUMN avatar TEXT",
+        (err) => {
+            if (err && !/duplicate column name/i.test(err.message)) {
+                console.error("Failed to add avatar column:", err);
+            }
+        }
+    );
+
+    // Transactions table (per user, includes note column)
     db.run(
         `
         CREATE TABLE IF NOT EXISTS transactions (
@@ -119,6 +126,7 @@ db.serialize(() => {
             type TEXT NOT NULL CHECK (type IN ('debit', 'credit')),
             category TEXT NOT NULL,
             createdAt TEXT NOT NULL,
+            note TEXT,
             FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
         )
         `,
@@ -126,6 +134,16 @@ db.serialize(() => {
             if (err) {
                 console.error("Failed to create transactions table:", err);
                 process.exit(1);
+            }
+        }
+    );
+
+    // Ensure note column exists on existing databases
+    db.run(
+        "ALTER TABLE transactions ADD COLUMN note TEXT",
+        (err) => {
+            if (err && !/duplicate column name/i.test(err.message)) {
+                console.error("Failed to add note column:", err);
             }
         }
     );
@@ -201,7 +219,8 @@ function generateToken(user) {
     const payload = {
         sub: user.id,
         username: user.username,
-        createdAt: user.createdAt
+        createdAt: user.createdAt,
+        avatar: user.avatar || null
     };
     return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
@@ -221,7 +240,8 @@ function authMiddleware(req, res, next) {
         req.user = {
             id: payload.sub,
             username: payload.username,
-            createdAt: payload.createdAt
+            createdAt: payload.createdAt,
+            avatar: payload.avatar || null
         };
         next();
     } catch (err) {
@@ -235,7 +255,7 @@ function authMiddleware(req, res, next) {
 function findUserByUsername(username) {
     return new Promise((resolve, reject) => {
         db.get(
-            "SELECT id, username, passwordHash, createdAt FROM users WHERE username = ?",
+            "SELECT id, username, passwordHash, createdAt, avatar FROM users WHERE username = ?",
             [username],
             (err, row) => {
                 if (err) return reject(err);
@@ -247,11 +267,11 @@ function findUserByUsername(username) {
 
 function createUser(username, password) {
     const createdAt = new Date().toISOString();
-    const passwordHash = bcrypt.hashSync(password, 10); // sync is fine for small apps
+    const passwordHash = bcrypt.hashSync(password, 10);
 
     return new Promise((resolve, reject) => {
         db.run(
-            "INSERT INTO users (username, passwordHash, createdAt) VALUES (?, ?, ?)",
+            "INSERT INTO users (username, passwordHash, createdAt, avatar) VALUES (?, ?, ?, NULL)",
             [username, passwordHash, createdAt],
             function (err) {
                 if (err) {
@@ -261,17 +281,30 @@ function createUser(username, password) {
                     }
                     return reject(err);
                 }
-                resolve({ id: this.lastID, username, createdAt });
+                resolve({ id: this.lastID, username, createdAt, avatar: null });
             }
         );
     });
 }
 
-// Transactions (per user)
+function updateUserAvatar(userId, avatar) {
+    return new Promise((resolve, reject) => {
+        db.run(
+            "UPDATE users SET avatar = ? WHERE id = ?",
+            [avatar, userId],
+            function (err) {
+                if (err) return reject(err);
+                resolve(avatar || null);
+            }
+        );
+    });
+}
+
+// Transactions (per user, with note)
 function getAllTransactionsForUser(userId) {
     return new Promise((resolve, reject) => {
         db.all(
-            "SELECT id, amount, type, category, createdAt FROM transactions WHERE userId = ? ORDER BY datetime(createdAt) ASC",
+            "SELECT id, amount, type, category, createdAt, note FROM transactions WHERE userId = ? ORDER BY datetime(createdAt) ASC",
             [userId],
             (err, rows) => {
                 if (err) return reject(err);
@@ -281,13 +314,13 @@ function getAllTransactionsForUser(userId) {
     });
 }
 
-function createTransaction(userId, amount, type, category) {
+function createTransaction(userId, amount, type, category, note) {
     const createdAt = new Date().toISOString();
 
     return new Promise((resolve, reject) => {
         db.run(
-            "INSERT INTO transactions (userId, amount, type, category, createdAt) VALUES (?, ?, ?, ?, ?)",
-            [userId, amount, type, category, createdAt],
+            "INSERT INTO transactions (userId, amount, type, category, createdAt, note) VALUES (?, ?, ?, ?, ?, ?)",
+            [userId, amount, type, category, createdAt, note],
             function (err) {
                 if (err) return reject(err);
                 const newTx = {
@@ -295,7 +328,8 @@ function createTransaction(userId, amount, type, category) {
                     amount,
                     type,
                     category,
-                    createdAt
+                    createdAt,
+                    note
                 };
                 resolve(newTx);
             }
@@ -303,11 +337,11 @@ function createTransaction(userId, amount, type, category) {
     });
 }
 
-function updateTransaction(userId, id, amount, type, category) {
+function updateTransaction(userId, id, amount, type, category, note) {
     return new Promise((resolve, reject) => {
         db.run(
-            "UPDATE transactions SET amount = ?, type = ?, category = ? WHERE id = ? AND userId = ?",
-            [amount, type, category, id, userId],
+            "UPDATE transactions SET amount = ?, type = ?, category = ?, note = ? WHERE id = ? AND userId = ?",
+            [amount, type, category, note, id, userId],
             function (err) {
                 if (err) return reject(err);
                 if (this.changes === 0) {
@@ -315,7 +349,7 @@ function updateTransaction(userId, id, amount, type, category) {
                 }
 
                 db.get(
-                    "SELECT id, amount, type, category, createdAt FROM transactions WHERE id = ? AND userId = ?",
+                    "SELECT id, amount, type, category, createdAt, note FROM transactions WHERE id = ? AND userId = ?",
                     [id, userId],
                     (err2, row) => {
                         if (err2) return reject(err2);
@@ -330,7 +364,7 @@ function updateTransaction(userId, id, amount, type, category) {
 function deleteTransaction(userId, id) {
     return new Promise((resolve, reject) => {
         db.get(
-            "SELECT id, amount, type, category, createdAt FROM transactions WHERE id = ? AND userId = ?",
+            "SELECT id, amount, type, category, createdAt, note FROM transactions WHERE id = ? AND userId = ?",
             [id, userId],
             (err, row) => {
                 if (err) return reject(err);
@@ -486,7 +520,8 @@ app.post("/api/auth/register", async (req, res) => {
             user: {
                 id: user.id,
                 username: user.username,
-                createdAt: user.createdAt
+                createdAt: user.createdAt,
+                avatar: user.avatar || null
             },
             token
         });
@@ -521,27 +556,23 @@ app.post("/api/auth/login", async (req, res) => {
                 .status(401)
                 .json({ error: "Invalid username or password." });
         }
-        
+
         const token = generateToken(user);
 
         res.json({
             user: {
                 id: user.id,
                 username: user.username,
-                createdAt: user.createdAt
+                createdAt: user.createdAt,
+                avatar: user.avatar || null
             },
             token
         });
     } catch (error) {
-        console.error("Error logging in user:", error);
-        res.status(500).json({ error: "Failed to log in user" });
+        console.error("Error logging in:", error);
+        res.status(500).json({ error: "Failed to login" });
     }
 });
-
-// Get current user from token
-app.get("/api/auth/me", authMiddleware, (req, res) => {
-            token
-        });
 
 // Get current user from token
 app.get("/api/auth/me", authMiddleware, (req, res) => {
@@ -549,14 +580,40 @@ app.get("/api/auth/me", authMiddleware, (req, res) => {
         user: {
             id: req.user.id,
             username: req.user.username,
-            createdAt: req.user.createdAt
+            createdAt: req.user.createdAt,
+            avatar: req.user.avatar || null
         }
     });
 });
 
+// Update avatar for current user
+app.put("/api/user/avatar", authMiddleware, async (req, res) => {
+    const { avatar } = req.body || {};
+
+    if (avatar !== null && avatar !== undefined) {
+        if (typeof avatar !== "string") {
+            return res
+                .status(400)
+                .json({ error: "avatar must be a string or null." });
+        }
+        if (avatar.length > 300000) {
+            return res.status(400).json({
+                error: "Avatar image is too large. Please use a smaller image."
+            });
+        }
+    }
+
+    try {
+        const saved = await updateUserAvatar(req.user.id, avatar || null);
+        res.json({ avatar: saved });
+    } catch (error) {
+        console.error("Error updating avatar:", error);
+        res.status(500).json({ error: "Failed to update avatar" });
+    }
+});
+
 // === Saving goal routes (per user) ===
 
-// Get saving goal for current user
 app.get("/api/saving-goal", authMiddleware, async (req, res) => {
     try {
         const row = await getSavingGoalForUser(req.user.id);
@@ -571,7 +628,6 @@ app.get("/api/saving-goal", authMiddleware, async (req, res) => {
     }
 });
 
-// Set / clear saving goal for current user
 app.put("/api/saving-goal", authMiddleware, async (req, res) => {
     const { goal } = req.body || {};
 
@@ -603,7 +659,6 @@ app.put("/api/saving-goal", authMiddleware, async (req, res) => {
 
 // === Category budgets routes (per user) ===
 
-// Get all category budgets for current user
 app.get("/api/category-budgets", authMiddleware, async (req, res) => {
     try {
         const rows = await getCategoryBudgetsForUser(req.user.id);
@@ -614,7 +669,6 @@ app.get("/api/category-budgets", authMiddleware, async (req, res) => {
     }
 });
 
-// Create or update a category budget
 app.post("/api/category-budgets", authMiddleware, async (req, res) => {
     let { category, monthlyBudget } = req.body || {};
 
@@ -648,7 +702,6 @@ app.post("/api/category-budgets", authMiddleware, async (req, res) => {
     }
 });
 
-// Delete a category budget
 app.delete(
     "/api/category-budgets/:category",
     authMiddleware,
@@ -679,7 +732,6 @@ app.delete(
 
 // === Transaction routes (require auth) ===
 
-// Get all transactions for current user
 app.get("/api/transactions", authMiddleware, async (req, res) => {
     try {
         const rows = await getAllTransactionsForUser(req.user.id);
@@ -690,7 +742,6 @@ app.get("/api/transactions", authMiddleware, async (req, res) => {
     }
 });
 
-// Create a new transaction
 app.post("/api/transactions", authMiddleware, async (req, res) => {
     const errors = validateFullTransaction(req.body);
     if (errors.length > 0) {
@@ -700,13 +751,18 @@ app.post("/api/transactions", authMiddleware, async (req, res) => {
     const amount = Number(req.body.amount);
     const type = req.body.type;
     const category = req.body.category.trim();
+    const note =
+        typeof req.body.note === "string" && req.body.note.trim().length > 0
+            ? req.body.note.trim()
+            : null;
 
     try {
         const created = await createTransaction(
             req.user.id,
             amount,
             type,
-            category
+            category,
+            note
         );
         res.status(201).json(created);
     } catch (error) {
@@ -715,7 +771,6 @@ app.post("/api/transactions", authMiddleware, async (req, res) => {
     }
 });
 
-// Update an existing transaction
 app.put("/api/transactions/:id", authMiddleware, async (req, res) => {
     const id = Number(req.params.id);
 
@@ -727,6 +782,10 @@ app.put("/api/transactions/:id", authMiddleware, async (req, res) => {
     const amount = Number(req.body.amount);
     const type = req.body.type;
     const category = req.body.category.trim();
+    const note =
+        typeof req.body.note === "string" && req.body.note.trim().length > 0
+            ? req.body.note.trim()
+            : null;
 
     try {
         const updated = await updateTransaction(
@@ -734,7 +793,8 @@ app.put("/api/transactions/:id", authMiddleware, async (req, res) => {
             id,
             amount,
             type,
-            category
+            category,
+            note
         );
         if (!updated) {
             return res.status(404).json({ error: "Transaction not found" });
@@ -746,7 +806,6 @@ app.put("/api/transactions/:id", authMiddleware, async (req, res) => {
     }
 });
 
-// Delete a transaction
 app.delete("/api/transactions/:id", authMiddleware, async (req, res) => {
     const id = Number(req.params.id);
 
@@ -762,7 +821,6 @@ app.delete("/api/transactions/:id", authMiddleware, async (req, res) => {
     }
 });
 
-// CSV export for current user
 app.get(
     "/api/transactions/export/csv",
     authMiddleware,
@@ -770,7 +828,14 @@ app.get(
         try {
             const rows = await getAllTransactionsForUser(req.user.id);
 
-            const header = ["id", "amount", "type", "category", "createdAt"];
+            const header = [
+                "id",
+                "amount",
+                "type",
+                "category",
+                "createdAt",
+                "note"
+            ];
             const lines = [header.join(",")];
 
             for (const row of rows) {
@@ -779,7 +844,8 @@ app.get(
                     row.amount,
                     row.type,
                     row.category,
-                    row.createdAt
+                    row.createdAt,
+                    row.note
                 ].map((value) => {
                     if (value === null || value === undefined) return "";
                     const str = String(value);
