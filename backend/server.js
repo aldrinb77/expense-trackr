@@ -251,6 +251,15 @@ function authMiddleware(req, res, next) {
 
 // --- DB helper functions (Promises) ---
 
+function runAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.run(sql, params, function (err) {
+            if (err) return reject(err);
+            resolve(this);
+        });
+    });
+}
+
 // Users
 function findUserByUsername(username) {
     return new Promise((resolve, reject) => {
@@ -430,7 +439,93 @@ function upsertSavingGoalForUser(userId, goal) {
         }
     });
 }
+async function importUserData(userId, data) {
+    const { savingGoal, categoryBudgets, transactions, user } = data || {};
 
+    const txList = Array.isArray(transactions) ? transactions : [];
+    const budgetList = Array.isArray(categoryBudgets) ? categoryBudgets : [];
+
+    try {
+        await runAsync("BEGIN TRANSACTION");
+
+        // Clear existing data
+        await runAsync("DELETE FROM transactions WHERE userId = ?", [userId]);
+        await runAsync("DELETE FROM category_budgets WHERE userId = ?", [userId]);
+        await runAsync("DELETE FROM saving_goals WHERE userId = ?", [userId]);
+
+        // Optional: avatar from backup
+        if (user && typeof user.avatar === "string") {
+            await updateUserAvatar(userId, user.avatar);
+        }
+
+        // Restore saving goal
+        if (savingGoal && typeof savingGoal.monthlyGoal === "number") {
+            await upsertSavingGoalForUser(userId, savingGoal.monthlyGoal);
+        }
+
+        // Restore budgets
+        for (const b of budgetList) {
+            if (
+                b &&
+                typeof b.category === "string" &&
+                typeof b.monthlyBudget === "number"
+            ) {
+                await upsertCategoryBudgetForUser(
+                    userId,
+                    b.category,
+                    b.monthlyBudget
+                );
+            }
+        }
+
+        // Restore transactions (ignore id, use createdAt if present)
+        for (const t of txList) {
+            if (!t) continue;
+            const amount = Number(t.amount);
+            const type = t.type;
+            const category = typeof t.category === "string" ? t.category : "";
+            if (
+                !type ||
+                (type !== "debit" && type !== "credit") ||
+                !category ||
+                Number.isNaN(amount) ||
+                amount <= 0
+            ) {
+                continue;
+            }
+
+            let createdAt = t.createdAt;
+            const note =
+                typeof t.note === "string" && t.note.trim().length > 0
+                    ? t.note.trim()
+                    : null;
+
+            const d = new Date(createdAt);
+            if (!createdAt || Number.isNaN(d.getTime())) {
+                createdAt = new Date().toISOString();
+            }
+
+            await runAsync(
+                "INSERT INTO transactions (userId, amount, type, category, createdAt, note) VALUES (?, ?, ?, ?, ?, ?)",
+                [userId, amount, type, category, createdAt, note]
+            );
+        }
+
+        await runAsync("COMMIT");
+        return {
+            transactions: txList.length,
+            categoryBudgets: budgetList.length,
+            savingGoal: savingGoal && typeof savingGoal.monthlyGoal === "number"
+        };
+    } catch (err) {
+        try {
+            await runAsync("ROLLBACK");
+        } catch (e) {
+            // ignore
+        }
+        throw err;
+    }
+}
 // Category budgets (per user)
 function getCategoryBudgetsForUser(userId) {
     return new Promise((resolve, reject) => {
@@ -818,6 +913,57 @@ app.delete("/api/transactions/:id", authMiddleware, async (req, res) => {
     } catch (error) {
         console.error("Error deleting transaction:", error);
         res.status(500).json({ error: "Failed to delete transaction" });
+    }
+});
+// Export all user data as JSON (for backup)
+app.get("/api/export/json", authMiddleware, async (req, res) => {
+    try {
+        const [txRows, budgetRows, savingRow] = await Promise.all([
+            getAllTransactionsForUser(req.user.id),
+            getCategoryBudgetsForUser(req.user.id),
+            getSavingGoalForUser(req.user.id)
+        ]);
+
+        const backup = {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            user: {
+                username: req.user.username,
+                createdAt: req.user.createdAt,
+                avatar: req.user.avatar || null
+            },
+            savingGoal:
+                savingRow && typeof savingRow.monthlyGoal === "number"
+                    ? { monthlyGoal: savingRow.monthlyGoal }
+                    : null,
+            categoryBudgets: budgetRows || [],
+            transactions: txRows || []
+        };
+
+        res.json(backup);
+    } catch (error) {
+        console.error("Error exporting JSON:", error);
+        res.status(500).json({ error: "Failed to export JSON" });
+    }
+});
+
+// Import user data from JSON backup (replace current user's data)
+app.post("/api/import/json", authMiddleware, async (req, res) => {
+    const data = req.body || {};
+
+    if (!data || typeof data !== "object") {
+        return res.status(400).json({ error: "Invalid backup format." });
+    }
+
+    try {
+        const result = await importUserData(req.user.id, data);
+        res.json({
+            success: true,
+            imported: result
+        });
+    } catch (error) {
+        console.error("Error importing JSON:", error);
+        res.status(500).json({ error: "Failed to import JSON backup" });
     }
 });
 
