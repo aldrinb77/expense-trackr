@@ -18,7 +18,7 @@ app.use(express.json());
 
 // CORS: allow only Netlify + tools without origin (curl/file://)
 const allowedOrigins = [
-    "https://gleeful-sunburst-10409b.netlify.app"
+    "https://expense-trackr-app.netlify.app"
 ];
 
 app.use(
