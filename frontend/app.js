@@ -1484,15 +1484,29 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Avatar modal
-    if (changeAvatarButton && avatarModal && avatarPreviewEl) {
-        changeAvatarButton.addEventListener("click", () => {
-            pendingAvatarDataUrl = null;
-            if (avatarErrorEl) avatarErrorEl.textContent = "";
-            setAvatarPreviewFromCurrentUser();
-            avatarModal.style.display = "flex";
-        });
-    }
+  // Avatar modal behavior
+if (changeAvatarButton && avatarModal && avatarPreviewEl) {
+    changeAvatarButton.addEventListener("click", () => {
+        pendingAvatarDataUrl = null;
+        if (avatarErrorEl) avatarErrorEl.textContent = "";
+
+        // Show current avatar or initial in the preview
+        if (currentUser && currentUser.avatar) {
+            avatarPreviewEl.style.backgroundImage = `url(${currentUser.avatar})`;
+            avatarPreviewEl.textContent = "";
+        } else if (currentUser && currentUser.username) {
+            avatarPreviewEl.style.backgroundImage = "none";
+            avatarPreviewEl.textContent = currentUser.username
+                .charAt(0)
+                .toUpperCase();
+        } else {
+            avatarPreviewEl.style.backgroundImage = "none";
+            avatarPreviewEl.textContent = "?";
+        }
+
+        avatarModal.style.display = "flex";
+    });
+}
 
     if (avatarCancelButton && avatarModal) {
         avatarCancelButton.addEventListener("click", () => {
@@ -1508,35 +1522,41 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    if (avatarFileInput) {
-        avatarFileInput.addEventListener("change", () => {
-            if (avatarErrorEl) avatarErrorEl.textContent = "";
-            const file = avatarFileInput.files && avatarFileInput.files[0];
-            if (!file) return;
-            if (file.size > 200 * 1024) {
-                if (avatarErrorEl) {
-                    avatarErrorEl.textContent =
-                        "File is too large. Please select an image under 200 KB.";
-                }
-                avatarFileInput.value = "";
-                return;
+   if (avatarFileInput) {
+    avatarFileInput.addEventListener("change", () => {
+        if (avatarErrorEl) avatarErrorEl.textContent = "";
+        const file = avatarFileInput.files && avatarFileInput.files[0];
+        if (!file) return;
+
+        // Simple size guard: ~200 KB
+        if (file.size > 200 * 1024) {
+            if (avatarErrorEl) {
+                avatarErrorEl.textContent =
+                    "File is too large. Please select an image under 200 KB.";
             }
-            const reader = new FileReader();
-            reader.onload = () => {
-                if (typeof reader.result === "string") {
-                    pendingAvatarDataUrl = reader.result;
-                    setAvatarPreviewFromDataUrl(pendingAvatarDataUrl);
-                }
-            };
-            reader.onerror = () => {
-                if (avatarErrorEl) {
-                    avatarErrorEl.textContent =
-                        "Failed to read file. Please try again.";
-                }
-            };
-            reader.readAsDataURL(file);
-        });
-    }
+            avatarFileInput.value = "";
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = reader.result;
+            if (typeof result === "string") {
+                pendingAvatarDataUrl = result;
+                // Directly update preview from selected image
+                avatarPreviewEl.style.backgroundImage = `url(${pendingAvatarDataUrl})`;
+                avatarPreviewEl.textContent = "";
+            }
+        };
+        reader.onerror = () => {
+            if (avatarErrorEl) {
+                avatarErrorEl.textContent =
+                    "Failed to read file. Please try again.";
+            }
+        };
+        reader.readAsDataURL(file);
+    });
+}
 
     if (avatarSaveButton) {
         avatarSaveButton.addEventListener("click", async () => {
@@ -1615,32 +1635,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let pendingAvatarDataUrl = null;
 
-    function setAvatarPreviewFromCurrentUser() {
-        if (!avatarPreviewEl) return;
-        if (currentUser && currentUser.avatar) {
-            avatarPreviewEl.style.backgroundImage = `url(${currentUser.avatar})`;
-            avatarPreviewEl.textContent = "";
-        } else if (currentUser && currentUser.username) {
-            avatarPreviewEl.style.backgroundImage = "none";
-            avatarPreviewEl.textContent = currentUser.username
-                .charAt(0)
-                .toUpperCase();
-        } else {
-            avatarPreviewEl.style.backgroundImage = "none";
-            avatarPreviewEl.textContent = "?";
-        }
-    }
-
-    function setAvatarPreviewFromDataUrl(dataUrl) {
-        if (!avatarPreviewEl) return;
-        if (dataUrl) {
-            avatarPreviewEl.style.backgroundImage = `url(${dataUrl})`;
-            avatarPreviewEl.textContent = "";
-        } else {
-            setAvatarPreviewFromCurrentUser();
-        }
-    }
-
+    
     async function saveAvatarOnServer(avatarDataUrl) {
         return fetchJson(`${API_BASE_URL}/api/user/avatar`, {
             method: "PUT",
