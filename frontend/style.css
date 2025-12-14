@@ -1538,6 +1538,30 @@ form {
 .toast-error {
     background-color: #c62828;
 }
+/* Add Transaction editing state */
+
+.card-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.editing-badge {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background-color: #fff3e0;
+    color: #e65100;
+    border: 1px solid #ffb74d;
+}
+
+#add-transaction-card.editing {
+    border-color: #ffb74d;
+    box-shadow: 0 0 0 1px rgba(255, 183, 77, 0.65);
+}
 
 /* Global loading overlay */
 .loading-overlay {

@@ -4,14 +4,34 @@
 
 // Use local backend when running from file:// or localhost,
 // otherwise use the deployed backend on Render.
-const isLocal =
+// Detect if running inside a native Capacitor app (Android APK)
+function isCapacitorNative() {
+    return (
+        typeof window !== "undefined" &&
+        window.Capacitor &&
+        typeof window.Capacitor.isNativePlatform === "function" &&
+        window.Capacitor.isNativePlatform()
+    );
+}
+
+// Use local backend only when running the web app on your PC.
+// In the Android APK, default to your deployed backend (Render).
+const isLocalWeb =
     window.location.protocol === "file:" ||
     window.location.hostname === "localhost" ||
     window.location.hostname === "127.0.0.1";
 
-const API_BASE_URL = isLocal
-    ? "http://localhost:4000"
-    : "https://expense-trackr-backend.onrender.com";
+// Optional override (useful for emulator/phone testing against your PC backend)
+const API_OVERRIDE = localStorage.getItem("expense-trackr-api-base"); 
+// examples: "http://10.0.2.2:4000" (emulator) or "http://192.168.1.50:4000" (phone on Wi‑Fi)
+
+const API_BASE_URL = API_OVERRIDE
+    ? API_OVERRIDE
+    : isCapacitorNative()
+      ? "https://expense-trackr-backend.onrender.com"
+      : isLocalWeb
+        ? "http://localhost:4000"
+        : "https://expense-trackr-backend.onrender.com";
 
 // LocalStorage keys
 const AUTH_TOKEN_KEY = "expense-tracker-auth-token-v1";
@@ -53,7 +73,13 @@ const DEFAULT_QUICK_CATEGORIES = [
     "Bills",
     "Others"
 ];
-
+if (!isCapacitorNative() && "serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/service-worker.js").catch((err) => {
+            console.error("Service worker registration failed:", err);
+        });
+    });
+}
 document.addEventListener("DOMContentLoaded", () => {
     // === Element references ===
 
@@ -63,9 +89,27 @@ document.addEventListener("DOMContentLoaded", () => {
     );
     const toastContainer = document.getElementById("toast-container");
     const globalLoadingEl = document.getElementById("global-loading");
-    const statusElement = document.getElementById("status-text");
 
-    // Profile & avatar
+        // === Button loading helper ===
+
+    function setButtonLoading(button, isLoading, loadingText = "Saving...") {
+        if (!button) return;
+        if (isLoading) {
+            if (!button.dataset.originalText) {
+                button.dataset.originalText = button.textContent;
+            }
+            button.textContent = loadingText;
+            button.disabled = true;
+        } else {
+            if (button.dataset.originalText) {
+                button.textContent = button.dataset.originalText;
+                delete button.dataset.originalText;
+            }
+            button.disabled = false;
+        }
+    }
+
+       // Profile & avatar
     const profileAvatarEl = document.getElementById("profile-avatar");
     const profileMemberSinceEl = document.getElementById("profile-member-since");
     const profileTotalTransactionsEl = document.getElementById(
@@ -103,7 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ".nav-link[data-scroll-target]"
     );
     const appTitleEl = document.querySelector(".brand-text h1");
-
+    
     // Auth
     const authLoggedOut = document.getElementById("auth-logged-out");
     const authLoggedIn = document.getElementById("auth-logged-in");
@@ -122,7 +166,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const logoutButton = document.getElementById("logout-button");
     const authRequiredSections = document.querySelectorAll(".requires-auth");
 
-    // Transaction form & list
+          // Transaction form & list
+    const addTransactionCard = document.getElementById("add-transaction-card");
+    const editingBadge = document.getElementById("editing-badge");
     const form = document.getElementById("transaction-form");
     const amountInput = document.getElementById("amount");
     const typeInput = document.getElementById("type");
@@ -207,16 +253,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "quick-category-chips"
     );
 
-    // --- Status ---
-
-    if (statusElement) {
-        const now = new Date();
-        statusElement.textContent =
-            "JavaScript is working. Page loaded at: " +
-            now.toLocaleString();
-        statusElement.style.color = "#2e7d32";
-    }
-
+   
     // === Theme ===
 
     function applyTheme(theme) {
@@ -277,7 +314,24 @@ document.addEventListener("DOMContentLoaded", () => {
             globalLoadingEl.style.display = "none";
         }
     }
+    // === Button loading helper ===
 
+    function setButtonLoading(button, isLoading, loadingText = "Saving...") {
+        if (!button) return;
+        if (isLoading) {
+            if (!button.dataset.originalText) {
+                button.dataset.originalText = button.textContent;
+            }
+            button.textContent = loadingText;
+            button.disabled = true;
+        } else {
+            if (button.dataset.originalText) {
+                button.textContent = button.dataset.originalText;
+                delete button.dataset.originalText;
+            }
+            button.disabled = false;
+        }
+    }
     // === Auth storage ===
 
     function loadAuthFromStorage() {
@@ -1725,25 +1779,33 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
         });
     }
 
-    function enterEditMode(tx) {
+        function enterEditMode(tx) {
         editingTransactionId = tx.id;
         amountInput.value = tx.amount.toString();
         typeInput.value = tx.type;
         categoryInput.value = tx.category;
         if (noteInput) noteInput.value = tx.note || "";
+
         if (submitButton) submitButton.textContent = "Save Changes";
         if (cancelEditButton) cancelEditButton.style.display = "inline-block";
         if (editingHint) editingHint.style.display = "block";
-        formError.textContent = "";
+
+        if (addTransactionCard) addTransactionCard.classList.add("editing");
+        if (editingBadge) editingBadge.style.display = "inline-block";
+
+        if (formError) formError.textContent = "";
     }
 
-    function exitEditMode() {
+       function exitEditMode() {
         editingTransactionId = null;
         if (submitButton) submitButton.textContent = "Add Transaction";
         if (cancelEditButton) cancelEditButton.style.display = "none";
         if (editingHint) editingHint.style.display = "none";
         if (formError) formError.textContent = "";
         if (noteInput) noteInput.value = "";
+
+        if (addTransactionCard) addTransactionCard.classList.remove("editing");
+        if (editingBadge) editingBadge.style.display = "none";
     }
 
     if (transactionList) {
@@ -1792,28 +1854,43 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
         });
     }
 
-    if (form) {
+        if (form) {
         form.addEventListener("submit", async (e) => {
             e.preventDefault();
-            formError.textContent = "";
+            if (formError) formError.textContent = "";
 
             const amountValue = parseFloat(amountInput.value);
             const typeValue = typeInput.value;
             const categoryValue = categoryInput.value.trim();
             const noteValue = noteInput ? noteInput.value.trim() : "";
 
+            const isEditing = editingTransactionId !== null;
+
+            setButtonLoading(
+                submitButton,
+                true,
+                isEditing ? "Saving..." : "Adding..."
+            );
+
             if (isNaN(amountValue) || amountValue <= 0) {
-                formError.textContent = "Please enter a valid positive amount.";
+                if (formError) {
+                    formError.textContent =
+                        "Please enter a valid positive amount.";
+                }
+                setButtonLoading(submitButton, false);
                 return;
             }
             if (!categoryValue) {
-                formError.textContent =
-                    "Please enter a category (e.g. Food, Petrol).";
+                if (formError) {
+                    formError.textContent =
+                        "Please enter a category (e.g. Food, Petrol).";
+                }
+                setButtonLoading(submitButton, false);
                 return;
             }
 
             try {
-                if (editingTransactionId === null) {
+                if (!isEditing) {
                     const created = await createTransactionOnServer(
                         amountValue,
                         typeValue,
@@ -1847,24 +1924,28 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
             } catch (err) {
                 console.error(err);
                 if (err.status === 401) {
-                    formError.textContent =
-                        "Your session has expired. Please log in again.";
+                    if (formError) {
+                        formError.textContent =
+                            "Your session has expired. Please log in again.";
+                    }
                     clearAuthState();
+                } else if (err instanceof TypeError) {
+                    if (formError) {
+                        formError.textContent =
+                            "Unable to reach the server. Please check your internet connection and try again.";
+                    }
                 } else {
-                    formError.textContent =
-                        "Failed to save transaction to server. Please try again.";
+                    if (formError) {
+                        formError.textContent =
+                            "Failed to save transaction to the server. Please try again.";
+                    }
                 }
+            } finally {
+                setButtonLoading(submitButton, false);
             }
         });
     }
 
-    if (cancelEditButton) {
-        cancelEditButton.addEventListener("click", () => {
-            form.reset();
-            exitEditMode();
-            amountInput.focus();
-        });
-    }
 
     // === Filters ===
 
@@ -2159,6 +2240,8 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
 
     // === Auth UI events (login/register/logout) ===
 
+        // === Auth UI events (login/register/logout) ===
+
     if (showRegisterButton) {
         showRegisterButton.addEventListener("click", () => {
             if (loginForm) loginForm.style.display = "none";
@@ -2185,11 +2268,15 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
             const username = loginUsernameInput.value.trim();
             const password = loginPasswordInput.value;
 
+            const submitBtn = loginForm.querySelector("button[type=submit]");
+            setButtonLoading(submitBtn, true, "Logging in...");
+
             if (!username || !password) {
                 if (loginErrorEl) {
                     loginErrorEl.textContent =
                         "Please enter both username and password.";
                 }
+                setButtonLoading(submitBtn, false);
                 return;
             }
 
@@ -2208,7 +2295,7 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
                     const msg =
                         data && data.error
                             ? data.error
-                            : "Login failed. Please try again.";
+                            : "Login failed. Please check your credentials and try again.";
                     if (loginErrorEl) loginErrorEl.textContent = msg;
                     return;
                 }
@@ -2231,9 +2318,16 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
             } catch (err) {
                 console.error(err);
                 if (loginErrorEl) {
-                    loginErrorEl.textContent =
-                        "Network error while logging in. Please try again.";
+                    if (err instanceof TypeError) {
+                        loginErrorEl.textContent =
+                            "Unable to reach the server. Please check your internet connection and try again.";
+                    } else {
+                        loginErrorEl.textContent =
+                            "Unexpected error while logging in. Please try again.";
+                    }
                 }
+            } finally {
+                setButtonLoading(submitBtn, false);
             }
         });
     }
@@ -2247,11 +2341,15 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
             const password = registerPasswordInput.value;
             const password2 = registerPassword2Input.value;
 
+            const submitBtn = registerForm.querySelector("button[type=submit]");
+            setButtonLoading(submitBtn, true, "Registering...");
+
             if (!username || !password || !password2) {
                 if (registerErrorEl) {
                     registerErrorEl.textContent =
                         "Please fill in all fields.";
                 }
+                setButtonLoading(submitBtn, false);
                 return;
             }
             if (password !== password2) {
@@ -2259,6 +2357,7 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
                     registerErrorEl.textContent =
                         "Passwords do not match.";
                 }
+                setButtonLoading(submitBtn, false);
                 return;
             }
             if (password.length < 6) {
@@ -2266,6 +2365,7 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
                     registerErrorEl.textContent =
                         "Password must be at least 6 characters.";
                 }
+                setButtonLoading(submitBtn, false);
                 return;
             }
 
@@ -2310,9 +2410,16 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
             } catch (err) {
                 console.error(err);
                 if (registerErrorEl) {
-                    registerErrorEl.textContent =
-                        "Network error while registering. Please try again.";
+                    if (err instanceof TypeError) {
+                        registerErrorEl.textContent =
+                            "Unable to reach the server. Please check your internet connection and try again.";
+                    } else {
+                        registerErrorEl.textContent =
+                            "Unexpected error while registering. Please try again.";
+                    }
                 }
+            } finally {
+                setButtonLoading(submitBtn, false);
             }
         });
     }
@@ -2323,7 +2430,13 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
         });
     }
 
-    // === Initial load ===
+    if (logoutButton) {
+        logoutButton.addEventListener("click", () => {
+            clearAuthState();
+        });
+    }
+
+       // === Initial load ===
 
     async function init() {
         loadTheme();
@@ -2334,9 +2447,7 @@ if (changeAvatarButton && avatarModal && avatarPreviewEl) {
         try {
             if (authToken && currentUser) {
                 try {
-                    const me = await fetchJson(
-                        `${API_BASE_URL}/api/auth/me`
-                    );
+                    const me = await fetchJson(`${API_BASE_URL}/api/auth/me`);
                     currentUser = me.user;
                     saveAuthToStorage();
                     await loadTransactionsFromServer();
