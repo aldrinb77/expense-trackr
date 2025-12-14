@@ -10,3 +10,7 @@ backend/data/expense-tracker.db
 .DS_Store
 Thumbs.db
 .vscode/
+# Capacitor / mobile builds
+mobile/
+android/
+ios/
